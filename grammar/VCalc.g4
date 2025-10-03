@@ -1,8 +1,7 @@
 grammar VCalc;
-
-//! grammar not tested
-// but probably works for now
-file: .*? EOF;
+// Tested on lab.antlr.org
+program: file;
+file: stat* EOF;
 
 stat: intDec END
     | vectorDec END
@@ -11,6 +10,7 @@ stat: intDec END
     | loop END
     | print END
     ;
+
 //separating expr and atom to control precidence
 //allows chaining
 // intermediate
@@ -18,48 +18,71 @@ atom: INT
     | ID
     | generator
     | filter
-    | '(' expr ')'
+    | PARENLEFT expr PARENRIGHT
     | ('-' | '+') atom  // unary operators
-    ; 
-index: atom ('[' expr ']')*;
-// in order of presidence
-// uses left recursion to handle compound exprs
-expr: expr ('*' | '/') expr        
-    | expr ('+' | '-') expr          
-    | expr ('==' | '!=') expr        
-    | expr ('<' | '>') expr 
-    | expr '..' expr                // 1..5
-    | index       
     ;
 
-cond: IF '(' expr ')' stat* FI;
-// loops can contain any statement BUT a declaration
+index: atom (SQLEFT expr SQRIGHT)*;
+
+// in order of presidence
+// uses left recursion to handle compound exprs
+expr: expr MULT expr
+    | expr DIV expr
+    | expr ADD expr
+    | expr MINUS expr
+    | expr EQEQ expr
+    | expr NEQ expr
+    | expr LT expr
+    | expr GT expr
+    | expr DOTDOT expr //range
+    | index
+    ;
+
 loopStat: assign
     | cond
     | loop
     | print
     ;
-    
-vectorDec: VECTOR ID '=' expr;
-intDec: ID '=' expr;
-generator: '[' ID IN expr '|' expr ']';
-filter: '[' ID IN expr AND expr ']';
-assign: ID '=' expr;
-loop: LOOP '(' expr ')' loopStat* POOL;
-print: PRINT '(' expr ')';
-ID: LETTER (LETTER|DIGIT)*;
-INT: DIGIT+;
-fragment DIGIT: [0-9];
-fragment LETTER: [a-zA-Z];
+
+cond: IF SQLEFT expr SQRIGHT stat* FI;
+vectorDec: VECTOR ID EQUAL expr;
+intDec: ID EQUAL expr;
+generator: SQLEFT ID IN expr LINE expr SQRIGHT;
+filter: SQLEFT ID IN expr AND expr SQRIGHT;
+assign: ID EQUAL expr;
+loop: LOOP SQLEFT expr SQRIGHT loopStat* POOL;
+print: PRINT PARENLEFT expr PARENRIGHT;
+// loops can contain any statement BUT a declaration
+
+VECTOR: 'vector';
 IF: 'if';
 FI: 'fi';
 LOOP: 'loop';
 POOL: 'pool';
 PRINT: 'print';
-VECTOR: 'vector';
 IN: 'in';
 AND: '&';
+LINE: '|';
+EQUAL: '=';
 END: ';';
-COMMENT: '//' .*? ('\n' | EOF) -> skip ;
-// Skip whitespace
-WS : [ \t\r\n]+ -> skip ;
+
+SQLEFT: '[';
+SQRIGHT: ']';
+PARENLEFT: '(';
+PARENRIGHT: ')';
+
+DOTDOT: '..';
+ADD: '+';
+MINUS: '-';
+MULT: '*';
+DIV: '/';
+EQEQ: '==';
+NEQ: '!=';
+LT: '<';
+GT: '>';
+
+INT: [0-9]+;
+ID: [a-zA-Z_][a-zA-Z0-9_]*;
+
+COMMENT: '//' ~[\r\n]* -> skip;
+WS: [ \t\r\n]+ -> skip;
