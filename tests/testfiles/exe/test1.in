@@ -1,0 +1,7 @@
+//CHECK_FILE:test1.out
+
+int i = 0;
+loop (i < 5)
+  print(i);
+  i = i + 1;
+pool;
