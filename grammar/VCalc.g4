@@ -11,6 +11,13 @@ stat: intDec END
     | print END
     ;
 
+blockStat: 
+    : assign END
+    | cond END
+    | loop END
+    | print END
+    ;
+
 //separating expr and atom to control precidence
 //allows chaining
 // intermediate
@@ -44,15 +51,15 @@ loopStat: assign
     | print
     ;
 
-cond: IF SQLEFT expr SQRIGHT stat* FI;
+cond: IF PARENLEFT expr PARENRIGHT blockStat* FI;                      
 vectorDec: VECTOR ID EQUAL expr;
 intDec: ID EQUAL expr;
 generator: SQLEFT ID IN expr LINE expr SQRIGHT;
 filter: SQLEFT ID IN expr AND expr SQRIGHT;
 assign: ID EQUAL expr;
-loop: LOOP SQLEFT expr SQRIGHT loopStat* POOL;
+loop: LOOP PARENLEFT expr PARENRIGHT blockStat* POOL;              
 print: PRINT PARENLEFT expr PARENRIGHT;
-// loops can contain any statement BUT a declaration
+// loops && conditionals cannot contain declarations
 
 VECTOR: 'vector';
 IF: 'if';
