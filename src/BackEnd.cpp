@@ -1,7 +1,9 @@
 #include <assert.h>
 
 #include "BackEnd.h"
-
+'''
+code generator and lowering class that takes high-level IR and lowers it to LLVM IR for further compilation/execution
+'''
 BackEnd::BackEnd() : loc(mlir::UnknownLoc::get(&context)) {
     // Load Dialects.
     context.loadDialect<mlir::LLVM::LLVMDialect>();
@@ -20,7 +22,9 @@ BackEnd::BackEnd() : loc(mlir::UnknownLoc::get(&context)) {
     createGlobalString("%c\0", "charFormat");
     createGlobalString("%d\0", "intFormat");
 }
-
+'''
+Generate main function in MLIR
+'''
 int BackEnd::emitModule() {
 
     // Create a main function 
@@ -56,7 +60,9 @@ int BackEnd::emitModule() {
     }
     return 0;
 }
-
+'''
+Use passes to lower high-end dialects (Arith, Memref etc..)
+'''
 int BackEnd::lowerDialects() {
     // Set up the MLIR pass manager to iteratively lower all the Ops
     mlir::PassManager pm(&context);
@@ -83,7 +89,9 @@ int BackEnd::lowerDialects() {
     }
     return 0;
 }
-
+'''
+Translate MLIR module to LLVM IR
+'''
 void BackEnd::dumpLLVM(std::ostream &os) {  
     // The only remaining dialects in our module after the passes are builtin
     // and LLVM. Setup translation patterns to get them to LLVM IR.
