@@ -18,37 +18,49 @@ blockStat
     | print END
     ;
 
-//separating expr and atom to control precidence
-//allows chaining
-// intermediate
-atom: INT
+// Expression precedence:
+// paren > index > range > mult/div > add/sub > lt/gt > eq/neq
+expr
+    : equalityExpr
+    ;
+
+// equality: ==, !=
+equalityExpr
+    : comparisonExpr (op=(EQEQ|NEQ) comparisonExpr)*
+    ;
+
+// comparison: <, >
+comparisonExpr
+    : addSubExpr (op=(LT|GT) addSubExpr)*
+    ;
+
+// addition and subtraction: +, -
+addSubExpr
+    : mulDivExpr (op=(ADD|MINUS) mulDivExpr)*
+    ;
+
+// multiplication and division: *, /
+mulDivExpr
+    : rangeExpr (op=(MULT|DIV) rangeExpr)*
+    ;
+
+// range and index: .. and []
+rangeExpr
+    : indexExpr (DOTDOT indexExpr)*
+    ;
+
+// index (can chain: a[0][1])
+indexExpr
+    : atom (SQLEFT expr SQRIGHT)*
+    ;
+
+// base atom
+atom
+    : INT
     | ID
     | generator
     | filter
     | PARENLEFT expr PARENRIGHT
-    | ('-' | '+') atom  // unary operators
-    ;
-
-index: atom (SQLEFT expr SQRIGHT)*;
-
-// in order of presidence
-// uses left recursion to handle compound exprs
-expr: expr MULT expr
-    | expr DIV expr
-    | expr ADD expr
-    | expr MINUS expr
-    | expr EQEQ expr
-    | expr NEQ expr
-    | expr LT expr
-    | expr GT expr
-    | expr DOTDOT expr //range
-    | index
-    ;
-
-loopStat: assign
-    | cond
-    | loop
-    | print
     ;
 
 cond: IF PARENLEFT expr PARENRIGHT blockStat* FI;                      
