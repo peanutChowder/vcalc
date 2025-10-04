@@ -11,7 +11,7 @@ stat: intDec END
     | print END
     ;
 
-blockStat: 
+blockStat
     : assign END
     | cond END
     | loop END
