@@ -53,7 +53,7 @@ loopStat: assign
 
 cond: IF PARENLEFT expr PARENRIGHT blockStat* FI;                      
 vectorDec: VECTOR ID EQUAL expr;
-intDec: ID EQUAL expr;
+intDec: INTKW ID EQUAL expr;
 generator: SQLEFT ID IN expr LINE expr SQRIGHT;
 filter: SQLEFT ID IN expr AND expr SQRIGHT;
 assign: ID EQUAL expr;
