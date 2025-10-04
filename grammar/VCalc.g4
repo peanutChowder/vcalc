@@ -67,6 +67,7 @@ FI: 'fi';
 LOOP: 'loop';
 POOL: 'pool';
 PRINT: 'print';
+INTKW: 'int';
 IN: 'in';
 AND: '&';
 LINE: '|';
