@@ -11,48 +11,67 @@ stat: intDec END
     | print END
     ;
 
-//separating expr and atom to control precidence
-//allows chaining
-// intermediate
-atom: INT
+blockStat
+    : assign END
+    | cond END
+    | loop END
+    | print END
+    ;
+
+// Expression precedence:
+// paren > index > range > mult/div > add/sub > lt/gt > eq/neq
+expr
+    : equalityExpr
+    ;
+
+// equality: ==, !=
+equalityExpr
+    : comparisonExpr (op=(EQEQ|NEQ) comparisonExpr)*
+    ;
+
+// comparison: <, >
+comparisonExpr
+    : addSubExpr (op=(LT|GT) addSubExpr)*
+    ;
+
+// addition and subtraction: +, -
+addSubExpr
+    : mulDivExpr (op=(ADD|MINUS) mulDivExpr)*
+    ;
+
+// multiplication and division: *, /
+mulDivExpr
+    : rangeExpr (op=(MULT|DIV) rangeExpr)*
+    ;
+
+// range and index: .. and []
+rangeExpr
+    : indexExpr (DOTDOT indexExpr)*
+    ;
+
+// index (can chain: a[0][1])
+indexExpr
+    : atom (SQLEFT expr SQRIGHT)*
+    ;
+
+// base atom
+atom
+    : INT
     | ID
     | generator
     | filter
     | PARENLEFT expr PARENRIGHT
-    | ('-' | '+') atom  // unary operators
     ;
 
-index: atom (SQLEFT expr SQRIGHT)*;
-
-// in order of presidence
-// uses left recursion to handle compound exprs
-expr: expr MULT expr
-    | expr DIV expr
-    | expr ADD expr
-    | expr MINUS expr
-    | expr EQEQ expr
-    | expr NEQ expr
-    | expr LT expr
-    | expr GT expr
-    | expr DOTDOT expr //range
-    | index
-    ;
-
-loopStat: assign
-    | cond
-    | loop
-    | print
-    ;
-
-cond: IF SQLEFT expr SQRIGHT stat* FI;
+cond: IF PARENLEFT expr PARENRIGHT blockStat* FI;                      
 vectorDec: VECTOR ID EQUAL expr;
-intDec: ID EQUAL expr;
+intDec: INTKW ID EQUAL expr;
 generator: SQLEFT ID IN expr LINE expr SQRIGHT;
 filter: SQLEFT ID IN expr AND expr SQRIGHT;
 assign: ID EQUAL expr;
-loop: LOOP SQLEFT expr SQRIGHT loopStat* POOL;
+loop: LOOP PARENLEFT expr PARENRIGHT blockStat* POOL;              
 print: PRINT PARENLEFT expr PARENRIGHT;
-// loops can contain any statement BUT a declaration
+// loops && conditionals cannot contain declarations
 
 VECTOR: 'vector';
 IF: 'if';
@@ -60,6 +79,7 @@ FI: 'fi';
 LOOP: 'loop';
 POOL: 'pool';
 PRINT: 'print';
+INTKW: 'int';
 IN: 'in';
 AND: '&';
 LINE: '|';
