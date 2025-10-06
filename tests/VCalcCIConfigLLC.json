@@ -1,0 +1,41 @@
+{
+  "testDir": "testfiles",
+  "testedExecutablePaths": {
+    "solution": "../bin/vcalc"
+  },
+  "solutionExecutable": "solution",
+  "runtimes": {
+    "solution": "../bin/libvcalcrt.so"
+  },
+  "toolchains": {
+    "gazprea-llc": [
+      {
+        "stepName": "gazprea",
+        "executablePath": "$EXE",
+        "arguments": ["$INPUT", "$OUTPUT"],
+        "output": "/tmp/gaz.ll",
+        "allowError": true
+      },
+      {
+        "stepName": "llc",
+        "executablePath": "/usr/local/llvm/bin/llc",
+        "arguments": ["-filetype=obj", "-relocation-model=pic", "$INPUT", "-o", "$OUTPUT"],
+        "output": "/tmp/vcalc.o"
+      },
+      {
+        "stepName": "clang",
+        "executablePath": "/usr/local/llvm/bin/clang",
+        "arguments": ["$INPUT", "-o", "$OUTPUT", "-L$RT_PATH", "-l$RT_LIB", "-lm"],
+        "output": "/tmp/vcalc"
+      },
+      {
+        "stepName": "run",
+        "executablePath": "$INPUT",
+        "arguments": [],
+        "usesInStr": true,
+        "usesRuntime": true,
+        "allowError": true
+      }
+    ]
+  }
+}
