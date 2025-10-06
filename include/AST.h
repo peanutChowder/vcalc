@@ -11,6 +11,7 @@ Header file for AST tree
 Filled with constructors, getters, setters
 All implementation specific code is in AST.cpp
 
+! to do: add control flow nodes
 AST types
 homogenous: single node type for all constructs
 heterogenous: different node types - this ds 
@@ -71,7 +72,7 @@ class IdNode: public ExprNode {
     public:
     //constructer
         ID(string id):value(id);
-        string getID() const{return id;}
+        std::string getID() const{return id;}
         void accept(class ASTVisitor& visitor) override;
 };
 
@@ -155,7 +156,7 @@ class BinaryOpNode: public ExprNode{
         ExprNode* getLeft() const {return left.get();}
         EXprNode* getRight() const {return right.get();}
         const std::string& getOperation() const {return operator_;}
-
+        std::string toString() const override; 
         void accept(ASTVisitor& visitor) override;
 }
 
@@ -171,7 +172,7 @@ class IndexNode: public ExprNode{
 
         ExprNode* getArray() const {return array.get();}
         ExprNode* getIndex() const {return index.get();}
-
+        std::string toString() const override; 
         void accept(ASTVisitor& visitor) override;
 };
 
@@ -187,6 +188,7 @@ class IntDecNode: public AST{
 
         const std::string& getId() const {return id.get();}
         ExprNode* getValue() const {return value.get();}
+        std::string toString() const override; 
         void accept(ASTVisitor& visitor) override;
 }
 // vector id = <vector>
@@ -200,6 +202,7 @@ class VectorDecNode: public AST{
 
         const std::string& getId() const {return id.get();}
         ExprNode* getVector() const {return vec.get();}
+        std::string toString() const override; 
         void accept(ASTVisitor& visitor) override;
 }
 class AssignNode: public AST{
@@ -213,6 +216,7 @@ class PrintNode: public AST{
         printNode(std::unique_ptr<ExprNode> printStat):
             printExpr(std::move(printStat)){}
         ExprNode* getPrintExpr() const {return printExpr.get()}
+        std::string toString() const override; 
         void accept(ASTVisitor& visitor) override;
 
 }
