@@ -18,6 +18,7 @@ void IdNode::accept(ASTVisitor& visitor){
 }
 
 // Expression
+// reference from Language Implementation Patterns
 ExprNode::ExprNode() : AST(), evalType(INVALID) {}
 std::string ExprNode::toString() { //override
     if (evalType != INVALID) {
