@@ -4,11 +4,19 @@
 #include <string>
 #include <memory>
 
-class ASTVisitor;
-class ExprNode;
-/* AST types
+class ASTVisitor;// needs to be implemented
+
+/* 
+Header file for AST tree
+Filled with constructors, getters, setters
+All implementation specific code is in AST.cpp
+
+AST types
 homogenous: single node type for all constructs
-heterogenous: different node types 
+heterogenous: different node types - this ds 
+
+TODO: implement control flow nodes
+
 */
 class AST{
     public:
@@ -168,7 +176,6 @@ class IndexNode: public ExprNode{
 };
 
 //statement classes
-
 // int id = <expr>
 class IntDecNode: public AST{
     private:
