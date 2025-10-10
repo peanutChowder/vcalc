@@ -9,6 +9,7 @@ on:
       - "lib/**"
       - "src/**"
       - "tests/**"
+      - ".github/**"
 
 jobs:
   build-artifact:
@@ -47,7 +48,7 @@ jobs:
           path: ./bin
 
       - name: Make Executable
-        run: chmod +x ./bin/gazc
+        run: chmod +x ./bin/vcalc
 
       - name: Run llc tests
         run: dragon-runner tests/VCalcCIConfigLLC.json --timeout 30
