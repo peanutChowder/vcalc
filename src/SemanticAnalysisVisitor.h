@@ -24,6 +24,8 @@ public:
     std::any visitLoop(VCalcParser::LoopContext *ctx) override;
     std::any visitPrint(VCalcParser::PrintContext *ctx) override;
 
+    std::any visitAtom(VCalcParser::AtomContext *ctx) override;
+
     // // statements
     // std::any visitLoop(SCalcParser::LoopContext *ctx) override;
     // std::any visitCondition(SCalcParser::ConditionContext *ctx) override;
