@@ -3,7 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace scalc {
+namespace vcalc {
 
 Scope::Scope(Scope* parent) : parent_(parent) {}
 

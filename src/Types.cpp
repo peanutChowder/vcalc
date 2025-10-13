@@ -18,40 +18,15 @@ std::string toString(SymbolType type) {
     }
 }
 
-SymbolType parseType(const std::string& typeLiteral) {
-    if (typeLiteral == "int") {
-        return SymbolType::Int;
-    }
-    if (typeLiteral == "bool") {
-        return SymbolType::Bool;
-    }
-    throw std::runtime_error("Semantic error: unsupported type '" + typeLiteral + "'.");
-}
-
 int semanticParseIntLiteral(const std::string& literal) {
     try {
-        unsigned long long parsed = std::stoull(literal);
-        if (parsed > static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
-            throw std::runtime_error("Semantic error: integer literal '" + literal + "' is too large.");
-        }
+        int parsed = std::stoi(literal);
         return static_cast<int>(parsed);
     } catch (const std::invalid_argument&) {
         throw std::runtime_error("Semantic error: integer literal '" + literal + "' is invalid.");
     } catch (const std::out_of_range&) {
         throw std::runtime_error("Semantic error: integer literal '" + literal + "' is out of range.");
     }
-}
-
-int interpretParseIntLiteral(const std::string& literal) {
-    try {
-        unsigned long long parsed = std::stoull(literal);
-        if (parsed > static_cast<long long>(std::numeric_limits<int>::max())) {
-            throw std::runtime_error("Semantic error: integer literal '" + literal + "' is too large.");
-        }
-        return static_cast<int>(parsed);
-    } catch (const std::invalid_argument&) {
-        throw std::runtime_error("Semantic error: integer literal '" + literal + "' is invalid.");
-    } 
 }
 
 void semanticAssertValidTypeValue(SymbolType type, const std::string& value) {
@@ -68,19 +43,6 @@ void semanticAssertValidTypeValue(SymbolType type, const std::string& value) {
     }
 }
 
-void interpretAssertValidTypeValue(SymbolType type, const std::string& value) {
-    switch (type) {
-        case SymbolType::Int:
-            interpretParseIntLiteral(value);
-            break;
-        case SymbolType::Bool: {
-            int parsed = interpretParseIntLiteral(value);
-            break;
-        }
-        default:
-            throw std::runtime_error("Unknown symbol type");
-    }
-}
 
 namespace {
 
@@ -151,13 +113,13 @@ SymbolType inferExpressionType(const std::vector<SymbolType>& operands,
 }
 
 Value coerceValue(const Value& v, SymbolType dst) {
-    long long val = std::get<long long>(v);
+    int val = std::get<int>(v);
     switch (dst) {
         case SymbolType::Int:
             return Value{val};
         case SymbolType::Bool:
             // Represent booleans as 0, 1
-            return Value{val != 0 ? 1LL : 0LL};
+            return Value{val != 0 ? 1 : 0};
         default:
             throw std::runtime_error("Runtime error: unsupported destination type in coerceValue.");
     }

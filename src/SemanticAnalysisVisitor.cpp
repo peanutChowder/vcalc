@@ -1,5 +1,5 @@
 #include "SemanticAnalysisVisitor.h"
-#include "SCalcParser.h"
+#include "VCalcParser.h"
 #include "Types.h"
 
 #include <any>
@@ -8,7 +8,8 @@
 #include <string>
 #include <vector>
 
-std::any scalc::SemanticAnalysisVisitor::visitProg(scalc::SCalcParser::ProgContext *ctx) {
+/*
+std::any scalc::SemanticAnalysisVisitor::visitStat(scalc::SCalcParser::ProgContext *ctx) {
   scopeByCtx_.clear(); // Reset in case of multiple visits
   root_ = std::make_unique<Scope>(nullptr);
   current_ = root_.get();
@@ -193,3 +194,4 @@ void scalc::SemanticAnalysisVisitor::exitScope() {
     current_ = current_->parent();
   }
 }
+*/

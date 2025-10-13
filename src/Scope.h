@@ -1,4 +1,3 @@
-#pragma once
 
 #include "Types.h"
 
@@ -7,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace scalc {
+namespace vcalc {
 
 struct SymbolInfo {
     std::string identifier;
