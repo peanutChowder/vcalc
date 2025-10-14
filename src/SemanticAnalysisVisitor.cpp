@@ -8,175 +8,56 @@
 #include <string>
 #include <vector>
 
+std::any vcalc::SemanticAnalysisVisitor::visitMulDivExpr(vcalc::VCalcParser::MulDivExprContext *ctx) {
+  // No multiplication, go to next recursive layer
+  if (ctx->op == nullptr) {
+    return visit(ctx->rangeExpr()[0]);
+  }
 
-// std::any scalc::SemanticAnalysisVisitor::visitStat(scalc::SCalcParser::ProgContext *ctx) {
-//   scopeByCtx_.clear(); // Reset in case of multiple visits
-//   root_ = std::make_unique<Scope>(nullptr);
-//   current_ = root_.get();
-//   scopeByCtx_[ctx] = current_;
-//   visitChildren(ctx);
-//   return {};
-// }
+  SymbolType currType = std::any_cast<SymbolType>(visit(ctx->rangeExpr()[0]));
 
-// std::any scalc::SemanticAnalysisVisitor::visitLoop(scalc::SCalcParser::LoopContext *ctx) {
-//   SymbolType conditionType = std::any_cast<SymbolType>(visit(ctx->expr()));
-//   if (!canAssign(SymbolType::Bool, conditionType)) {
-//     throw std::runtime_error("Semantic error: loop condition must be convertible to bool.");
-//   }
 
-//   enterScopeFor(ctx);
-//   for (auto *stmt : ctx->blockStatement()) {
-//     visit(stmt);
-//   }
-//   exitScope();
+  for (size_t i = 1; i < ctx->rangeExpr().size(); i++) {
+    // Promote bool to int
+    if (currType == SymbolType::Bool) {
+      currType = SymbolType::Int;
+    }
+    if (!(canAssign(SymbolType::Int, currType) || canAssign(SymbolType::Vector, currType))) {
+        throw std::runtime_error(
+            "Semantic error: invalid operand type in mul/div operation '" + toString(currType) + "'.");
+    }
 
-//   return {};
-// }
+    SymbolType rhsType = std::any_cast<SymbolType>(visit(ctx->rangeExpr()[i]));
+    
+    std::optional<SymbolType> opResultType = castResult(currType, rhsType);
 
-// std::any scalc::SemanticAnalysisVisitor::visitCondition(scalc::SCalcParser::ConditionContext *ctx) {
-//   SymbolType conditionType = std::any_cast<SymbolType>(visit(ctx->expr()));
-//   if (!canAssign(SymbolType::Bool, conditionType)) {
-//     throw std::runtime_error("Semantic error: condition must be convertible to bool.");
-//   }
+    if (opResultType == std::nullopt) {
+      throw std::runtime_error(
+        "Semantic error: invalid operand type in mul/div operation '" + toString(currType) + "'.");
+    }
+    currType = *opResultType;
+  }
 
-//   enterScopeFor(ctx);
-//   for (auto *stmt : ctx->blockStatement()) {
-//     visit(stmt);
-//   }
-//   exitScope();
 
-//   return {};
-// }
+  return currType;
+}
 
-// std::any scalc::SemanticAnalysisVisitor::visitExpr(scalc::SCalcParser::ExprContext *ctx) {
-//   return visit(ctx->eqExpr());
-// }
+std::any vcalc::SemanticAnalysisVisitor::visitRangeExpr(vcalc::VCalcParser::RangeExprContext *ctx) {
+  SymbolType leftType = std::any_cast<SymbolType>(visit(ctx->indexExpr()[0]));
+  
+  if (ctx->indexExpr().size() == 1) {
+    return leftType;
+  }
 
-// std::any scalc::SemanticAnalysisVisitor::visitAssign(scalc::SCalcParser::AssignContext *ctx) {
-//   std::string id = ctx->IDENTIFIER()->getText();
-//   SymbolInfo* symbol = current_ ? current_->resolve(id) : nullptr;
-//   if (symbol == nullptr) {
-//     throw std::runtime_error("Semantic error: variable " + id + " used before declaration.");
-//   }
+  SymbolType rightType = std::any_cast<SymbolType>(visit(ctx->indexExpr()[1]));
 
-//   SymbolType exprType = std::any_cast<SymbolType>(visit(ctx->expr()));
-//   if (!canAssign(symbol->type, exprType)) {
-//     throw std::runtime_error(
-//       "Semantic error: cannot assign value of type '" + std::string(toString(exprType)) +
-//       "' to variable '" + id + "' of type '" + std::string(toString(symbol->type)) + "'.");
-//   }
+  if (!(canAssign(SymbolType::Int, leftType) & canAssign(SymbolType::Int, rightType))) {
+    throw std::runtime_error("Semantic error: range expression operands must be integers, not" + std::string(toString(leftType)) + " and " + std::string(toString(rightType)) + ".");
+  }
 
-//   return {};
-// }
+  return SymbolType::Vector;
 
-// std::any scalc::SemanticAnalysisVisitor::visitDeclr(scalc::SCalcParser::DeclrContext *ctx) {
-//   std::string id = ctx->IDENTIFIER()->getText();
-//   SymbolType type = parseType(ctx->TYPE()->getText());
-//   bool success = current_ && current_->declare(id, type); // Checks if already declared in this scope
-
-//   if (!success) {
-//     throw std::runtime_error("Semantic error: variable " + id + " already declared in this scope.");
-//   }
-
-//   SymbolType initializerType = std::any_cast<SymbolType>(visit(ctx->expr()));
-//   if (!canAssign(type, initializerType)) {
-//     throw std::runtime_error(
-//       "Semantic error: cannot initialize variable '" + id + "' of type '" + std::string(toString(type)) +
-//       "' with expression of type '" + std::string(toString(initializerType)) + "'.");
-//   }
-
-//   return {};
-// }
-
-// std::any scalc::SemanticAnalysisVisitor::visitMulDiv(scalc::SCalcParser::MulDivContext *ctx) {
-//   std::vector<SymbolType> operands;
-//   operands.reserve(ctx->right.size() + 1);
-//   operands.push_back(std::any_cast<SymbolType>(visit(ctx->left)));
-
-//   for (auto *right : ctx->right) {
-//     operands.push_back(std::any_cast<SymbolType>(visit(right)));
-//   }
-
-//   SymbolType result = inferExpressionType(operands,
-//                                           {SymbolType::Int},
-//                                           SymbolType::Int,
-//                                           "arithmetic expression");
-
-//   for (std::size_t i = 0; i < ctx->right.size(); ++i) {
-//     if (ctx->op[i]->getText() == "/") {
-//       auto *rhsAtom = ctx->right[i];
-//       if (rhsAtom->INT_LITERAL() && rhsAtom->INT_LITERAL()->getText() == "0") {
-//         throw std::runtime_error("Semantic error: division by zero.");
-//       }
-//     }
-//   }
-
-//   return result;
-// }
-
-// std::any scalc::SemanticAnalysisVisitor::visitAddSub(scalc::SCalcParser::AddSubContext *ctx) {
-//   std::vector<SymbolType> operands;
-//   operands.reserve(ctx->right.size() + 1);
-//   operands.push_back(std::any_cast<SymbolType>(visit(ctx->left)));
-
-//   for (auto *right : ctx->right) {
-//     operands.push_back(std::any_cast<SymbolType>(visit(right)));
-//   }
-
-//   SymbolType result = inferExpressionType(operands,
-//                                           {SymbolType::Int},
-//                                           SymbolType::Int,
-//                                           "addition/subtraction expression");
-
-//   return result;
-// }
-
-// std::any scalc::SemanticAnalysisVisitor::visitCmp(scalc::SCalcParser::CmpContext *ctx) {
-//   std::vector<SymbolType> operands;
-//   operands.reserve(ctx->right.size() + 1);
-//   operands.push_back(std::any_cast<SymbolType>(visit(ctx->left)));
-
-//   for (auto *right : ctx->right) {
-//     operands.push_back(std::any_cast<SymbolType>(visit(right)));
-//   }
-
-//   return inferExpressionType(operands,
-//                              {SymbolType::Int},
-//                              SymbolType::Bool,
-//                              "comparison expression");
-// }
-
-// std::any scalc::SemanticAnalysisVisitor::visitEqNeq(scalc::SCalcParser::EqNeqContext *ctx) {
-//   std::vector<SymbolType> operands;
-//   operands.reserve(ctx->right.size() + 1);
-//   operands.push_back(std::any_cast<SymbolType>(visit(ctx->left)));
-
-//   for (auto *right : ctx->right) {
-//     operands.push_back(std::any_cast<SymbolType>(visit(right)));
-//   }
-
-//   return inferExpressionType(operands,
-//                              {SymbolType::Int, SymbolType::Bool},
-//                              SymbolType::Bool,
-//                              "equality expression");
-// }
-
-// std::any scalc::SemanticAnalysisVisitor::visitAtom(scalc::SCalcParser::AtomContext *ctx) {
-//   if (ctx->IDENTIFIER()) {
-//     SymbolInfo* symbol = current_ ? current_->resolve(ctx->IDENTIFIER()->getText()) : nullptr;
-//     if (symbol == nullptr) {
-//       throw std::runtime_error("Semantic error: variable " + ctx->IDENTIFIER()->getText() + " used before declaration.");
-//     }
-//     return symbol->type;
-//   } else if (ctx->INT_LITERAL()) {
-//     semanticAssertValidTypeValue(SymbolType::Int, ctx->INT_LITERAL()->getText());
-//     return SymbolType::Int;
-//   } else if (ctx->expr()) {
-//     return visit(ctx->expr());
-//   }
-
-//   throw std::runtime_error("Semantic error: unsupported atom construct.");
-// }
+}
 
 std::any vcalc::SemanticAnalysisVisitor::visitIndexExpr(vcalc::VCalcParser::IndexExprContext *ctx) {
   SymbolType domainType = std::any_cast<SymbolType>(visit(ctx->atom()));
