@@ -11,7 +11,8 @@ using Value = std::variant<int>;
 
 enum class SymbolType {
     Int,
-    Bool
+    Bool,
+    Vector
 };
 
 struct EvalResult {

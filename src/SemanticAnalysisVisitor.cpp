@@ -178,6 +178,30 @@
 //   throw std::runtime_error("Semantic error: unsupported atom construct.");
 // }
 
+std::any vcalc::SemanticAnalysisVisitor::visitIndexExpr(vcalc::VCalcParser::IndexExprContext *ctx) {
+  SymbolType domainType = std::any_cast<SymbolType>(visit(ctx->atom()));
+
+  // No indexing operator, fallthrough
+  if (ctx->expr() == nullptr) {
+    return domainType;
+  } 
+
+  if (domainType != SymbolType::Vector) {
+    throw std::runtime_error("Semantic error: cannot index non-vector type.");
+  }
+
+  SymbolType indexType = std::any_cast<SymbolType>(visit(ctx->expr()));
+  if (!(indexType == SymbolType::Int || indexType == SymbolType::Vector)) {
+    throw std::runtime_error("Semantic error: cannot index vector with type '" + std::string(toString(indexType)) + "'.");
+  }
+
+  if (indexType == SymbolType::Vector) {
+    return SymbolType::Vector;
+  }
+
+  return SymbolType::Int;
+}
+
 std::any vcalc::SemanticAnalysisVisitor::visitAtom(vcalc::VCalcParser::AtomContext *ctx) {
   if (ctx->INT()) {
     semanticAssertValidTypeValue(SymbolType::Int, ctx->INT()->getText());
@@ -192,7 +216,7 @@ std::any vcalc::SemanticAnalysisVisitor::visitAtom(vcalc::VCalcParser::AtomConte
 
   } else if (ctx->generator()) {
     return visit(ctx->generator());
-    
+
   } else if (ctx->filter()) {
     return visit(ctx->filter());
 

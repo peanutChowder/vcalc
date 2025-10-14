@@ -13,6 +13,8 @@ std::string toString(SymbolType type) {
             return "int";
         case SymbolType::Bool:
             return "bool";
+        case SymbolType::Vector:
+            return "vector";
         default:
             throw std::runtime_error("Unknown symbol type");
     }
