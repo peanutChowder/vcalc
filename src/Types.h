@@ -21,6 +21,7 @@ struct EvalResult {
 };
 
 std::string toString(SymbolType type);
+std::optional<SymbolType> castResult(SymbolType to, SymbolType from);
 int semanticParseIntLiteral(const std::string& literal);
 void semanticAssertValidTypeValue(SymbolType type, const std::string& value);
 bool canAssign(SymbolType destination, SymbolType source);

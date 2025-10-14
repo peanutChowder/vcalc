@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <limits>
-#include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -45,30 +45,60 @@ void semanticAssertValidTypeValue(SymbolType type, const std::string& value) {
     }
 }
 
+std::optional<SymbolType> castResult(SymbolType to, SymbolType from) {
+    if (to == from) {
+        return to;
+    }
+
+    switch (to) {
+        case SymbolType::Int:
+            if (from == SymbolType::Bool) {
+                return SymbolType::Int;
+            }
+            if (from == SymbolType::Vector) {
+                return SymbolType::Vector;
+            }
+            break;
+        case SymbolType::Bool:
+            if (from == SymbolType::Int) {
+                return SymbolType::Bool;
+            }
+            break;
+        case SymbolType::Vector:
+            if (from == SymbolType::Int) {
+                return SymbolType::Vector;
+            }
+            if (from == SymbolType::Bool) {
+                return SymbolType::Vector;
+            }
+            break;
+        default:
+            break;
+    }
+
+    return std::nullopt;
+}
 
 namespace {
 
-const std::map<SymbolType, std::vector<SymbolType>>& implicitCastTable() {
-    static const std::map<SymbolType, std::vector<SymbolType>> table = {
-        {SymbolType::Int,  {SymbolType::Bool}},
-        {SymbolType::Bool, {SymbolType::Int}}
-    };
-    return table;
+bool isConvertibleTo(SymbolType source, SymbolType target) {
+    auto result = castResult(target, source);
+    return result.has_value() && *result == target;
 }
 
 bool isConvertibleToAny(SymbolType candidate, const std::vector<SymbolType>& targets) {
     return std::any_of(targets.begin(), targets.end(), [&](SymbolType target) {
-        return target == candidate || canAssign(target, candidate);
+        return isConvertibleTo(candidate, target);
     });
 }
 
 std::string concatenateAllowedTypes(const std::vector<SymbolType>& targets) {
     std::string allowed;
-    for (std::size_t i = 0; i < targets.size(); ++i) {
+    for (SymbolType type : targets) {
         if (!allowed.empty()) {
             allowed += " or ";
         }
-        allowed += toString(targets[i]);
+        allowed += toString(type);
     }
     return allowed;
 }
@@ -80,14 +110,8 @@ bool canAssign(SymbolType destination, SymbolType source) {
         return true;
     }
 
-    const auto& table = implicitCastTable();
-    auto it = table.find(destination);
-    if (it == table.end()) {
-        return false;
-    }
-
-    const auto &allowedSources = it->second;
-    return std::find(allowedSources.begin(), allowedSources.end(), source) != allowedSources.end();
+    auto result = castResult(destination, source);
+    return result.has_value() && *result == destination;
 }
 
 SymbolType inferExpressionType(const std::vector<SymbolType>& operands,
