@@ -24,6 +24,9 @@ public:
     std::any visitLoop(VCalcParser::LoopContext *ctx) override;
     std::any visitPrint(VCalcParser::PrintContext *ctx) override;
 
+    std::any visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) override;
+    std::any visitComparisonExpr(VCalcParser::ComparisonExprContext *ctx) override;
+    std::any visitAddSubExpr(VCalcParser::AddSubExprContext *ctx) override;
     std::any visitMulDivExpr(VCalcParser::MulDivExprContext *ctx) override;
     std::any visitRangeExpr(VCalcParser::RangeExprContext *ctx) override;
     std::any visitIndexExpr(VCalcParser::IndexExprContext *ctx) override;

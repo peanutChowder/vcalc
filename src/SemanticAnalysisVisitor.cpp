@@ -8,6 +8,110 @@
 #include <string>
 #include <vector>
 
+std::any vcalc::SemanticAnalysisVisitor::visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) {
+  // No operator, go to next recursive layer
+  if (ctx->op == nullptr) {
+    return visit(ctx->comparisonExpr()[0]);
+  }
+
+  SymbolType currType = std::any_cast<SymbolType>(visit(ctx->comparisonExpr()[0]));
+
+  for (size_t i = 1; i < ctx->comparisonExpr().size(); i++) {
+    // Promote bool to int prior to comparison, to avoid cast errors due to vec -> bool casting
+    if (currType == SymbolType::Bool) {
+      currType = SymbolType::Int;
+    }
+    if (!(canAssign(SymbolType::Bool, currType) || canAssign(SymbolType::Vector, currType))) {
+        throw std::runtime_error(
+            "Semantic error: invalid operand type in equality operation '" + toString(currType) + "'.");
+    }
+
+    SymbolType rhsType = std::any_cast<SymbolType>(visit(ctx->comparisonExpr()[i]));
+    
+    std::optional<SymbolType> opResultType = castResult(currType, rhsType);
+
+    if (opResultType == std::nullopt) {
+      throw std::runtime_error(
+        "Semantic error: invalid operand type in equality operation '" + toString(currType) + "'.");
+    }
+    currType = *opResultType;
+  }
+
+  if (currType == SymbolType::Int) {
+    currType = SymbolType::Bool;
+  }
+
+  return currType;
+}
+
+std::any vcalc::SemanticAnalysisVisitor::visitComparisonExpr(VCalcParser::ComparisonExprContext *ctx) {
+  // No operator, go to next recursive layer
+  if (ctx->op == nullptr) {
+    return visit(ctx->addSubExpr()[0]);
+  }
+
+  SymbolType currType = std::any_cast<SymbolType>(visit(ctx->addSubExpr()[0]));
+
+  for (size_t i = 1; i < ctx->addSubExpr().size(); i++) {
+    // Promote bool to int prior to comparison, to avoid cast errors due to vec -> bool
+    if (currType == SymbolType::Bool) {
+      currType = SymbolType::Int;
+    }
+    if (!(canAssign(SymbolType::Bool, currType) || canAssign(SymbolType::Vector, currType))) {
+        throw std::runtime_error(
+            "Semantic error: invalid operand type in GT/LT operation '" + toString(currType) + "'.");
+    }
+
+    SymbolType rhsType = std::any_cast<SymbolType>(visit(ctx->addSubExpr()[i]));
+    
+    std::optional<SymbolType> opResultType = castResult(currType, rhsType);
+
+    if (opResultType == std::nullopt) {
+      throw std::runtime_error(
+        "Semantic error: invalid operand type in GT/LT operation '" + toString(currType) + "'.");
+    }
+    currType = *opResultType;
+  }
+
+  if (currType == SymbolType::Int) {
+    currType = SymbolType::Bool;
+  }
+
+  return currType;
+}
+
+std::any vcalc::SemanticAnalysisVisitor::visitAddSubExpr(vcalc::VCalcParser::AddSubExprContext *ctx) {
+  // No operator, go to next recursive layer
+  if (ctx->op == nullptr) {
+    return visit(ctx->mulDivExpr()[0]);
+  }
+
+  SymbolType currType = std::any_cast<SymbolType>(visit(ctx->mulDivExpr()[0]));
+
+  for (size_t i = 1; i < ctx->mulDivExpr().size(); i++) {
+    // Promote bool to int
+    if (currType == SymbolType::Bool) {
+      currType = SymbolType::Int;
+    }
+    if (!(canAssign(SymbolType::Int, currType) || canAssign(SymbolType::Vector, currType))) {
+        throw std::runtime_error(
+            "Semantic error: invalid operand type in add/sub operation '" + toString(currType) + "'.");
+    }
+
+    SymbolType rhsType = std::any_cast<SymbolType>(visit(ctx->mulDivExpr()[i]));
+    
+    std::optional<SymbolType> opResultType = castResult(currType, rhsType);
+
+    if (opResultType == std::nullopt) {
+      throw std::runtime_error(
+        "Semantic error: invalid operand type in add/sub operation '" + toString(currType) + "'.");
+    }
+    currType = *opResultType;
+  }
+
+  return currType;
+}
+
 std::any vcalc::SemanticAnalysisVisitor::visitMulDivExpr(vcalc::VCalcParser::MulDivExprContext *ctx) {
   // No multiplication, go to next recursive layer
   if (ctx->op == nullptr) {
@@ -15,7 +119,6 @@ std::any vcalc::SemanticAnalysisVisitor::visitMulDivExpr(vcalc::VCalcParser::Mul
   }
 
   SymbolType currType = std::any_cast<SymbolType>(visit(ctx->rangeExpr()[0]));
-
 
   for (size_t i = 1; i < ctx->rangeExpr().size(); i++) {
     // Promote bool to int
