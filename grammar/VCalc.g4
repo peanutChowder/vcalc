@@ -46,12 +46,12 @@ mulDivExpr
 
 // range and index: .. and []
 rangeExpr
-    : indexExpr (DOTDOT indexExpr)*
+    : indexExpr (DOTDOT indexExpr)?
     ;
 
 // index (can chain: a[0][1])
 indexExpr
-    : atom (SQLEFT expr SQRIGHT)*
+    : atom (SQLEFT expr SQRIGHT)?
     ;
 
 // base atom
