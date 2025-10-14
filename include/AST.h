@@ -22,7 +22,8 @@ class AST{
     public:
         AST();
         virtual ~AST() = default;
-        virtual std::string toString() const { return "AST"; }
+        virtual std::string toString() const { return "AST";}
+        virtual void accept(ASTVisitor& visitor) = 0; 
 };
 
 //abstract
