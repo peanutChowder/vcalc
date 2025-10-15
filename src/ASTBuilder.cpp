@@ -17,6 +17,10 @@ std::any ASTBuilder::visitFile(VCalcParser::FileContext *ctx) {
     return std::make_shared<FileNode>(std::move(statements));
 }
 
+std::any ASTBuilder::visitExpr(VCalcParser::ExprContext *ctx) {
+    return visit(ctx->equalityExpr());
+}
+
 std::any ASTBuilder::visitAssign(VCalcParser::AssignContext *ctx) {
     std::string id = ctx->ID()->getText();
     auto expr = visit(ctx->expr());
