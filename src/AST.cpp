@@ -3,8 +3,9 @@
 #include <string>
 #include <memory>
 #include "AST.h"
+#include "ASTVisitor.h"
 
-// ASTNode base implementation (constructor not needed unless you want to set type)
+// ASTNode base implementation 
 ASTNode::~ASTNode() = default;
 
 // ExprNode
