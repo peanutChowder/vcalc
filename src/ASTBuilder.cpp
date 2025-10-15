@@ -115,8 +115,8 @@ std::any ASTBuilder::visitRangeExpr(VCalcParser::RangeExprContext *ctx) {
 }
 
 std::any ASTBuilder::visitIndexExpr(VCalcParser::IndexExprContext *ctx) {
-    auto array = visit(ctx->expr(0));
-    auto index = visit(ctx->expr(1));
+    auto array = visit(ctx->atom());
+    auto index = visit(ctx->expr());
     return std::make_shared<IndexNode>(std::move(array), std::move(index));
 }
 
