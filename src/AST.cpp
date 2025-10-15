@@ -1,158 +1,140 @@
 #include "AST.h"
-#include "antlr4-runtime.h"
 #include <vector>
 #include <string>
 #include <memory>
+#include "AST.h"
+#include "ASTVisitor.h"
 
-/*
-sets EvalTypes to nodes
-toString methods
-override methods
-I have evalType as a string rn but we could change it to an enum
-Typechecking will take place in the ASTVisitor
-*/
+// ASTNode base implementation 
+ASTNode::~ASTNode() = default;
 
-AST::AST() {}
+// ExprNode
+ExprNode::ExprNode() { type = ValueType::UNKNOWN; }
+ExprNode::~ExprNode() = default;
 
-std::string AST::toString() const {
-    return "AST";
+// IntNode
+IntNode::IntNode(int v) : value(v) { type = ValueType::INTEGER; }
+std::string IntNode::toString() const {
+    return std::to_string(value);
 }
+void IntNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
-//Node specific code for ExprNode
-// abstract class
-// reference from Language Implementation Patterns
-ExprNode::ExprNode() : AST(), evalType(INVALID) {}
-
-std::string ExprNode::toString() const { //override
-    if (evalType != INVALID) {
-        std::string typeString;
-        switch (evalType) {
-            case SCALAR: typeString = "SCALAR"; break;
-            case VECTOR: typeString = "VECTOR"; break;
-            default: typeString = "INVALID"; break;
-        }
-        return AST::toString() + " type=" + typeString;
-    }
-    return AST::toString();
-    // no implementation of accept since this is an abstract class
+// IdNode
+IdNode::IdNode(const std::string& i) : id(i) { type = ValueType::UNKNOWN; }
+std::string IdNode::toString() const {
+    return id;
 }
+void IdNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
-// toString methods
-//Generator
-// [<domain variable> in <domain> | <expression>]
-std::string GeneratorNode::toString() const {
-    return "[ " + getId() + " in " + getDomExpr()->toString() + " | " + getBodyExpr()->toString() + " ]";
-}
-
-//Filter
-// [<domain variable> in <domain> & <predicate>]
-std::string FilterNode::toString() const {
-    return "[ " + getId() + " in " + getDomExpr()->toString() + " & " + getPredExpr()->toString() + " ]";
-}
-
-// range
-// <expr> .. <expr>
-std::string RangeNode::toString() const {
-    return getStartExpr()->toString() + " .. " + getEndExpr()->toString();
-}
-
+// BinaryOpNode
+BinaryOpNode::BinaryOpNode(std::unique_ptr<ExprNode> l, std::unique_ptr<ExprNode> r, const std::string& o)
+    : left(std::move(l)), right(std::move(r)), op(o) { type = ValueType::UNKNOWN; }
 std::string BinaryOpNode::toString() const {
-    return getLeft()->toString() + " " + getOperation() + " " + getRight()->toString();
+    return left->toString() + " " + op + " " + right->toString();
 }
+void BinaryOpNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
-//! might not work if there are multiple indexes
+// RangeNode
+RangeNode::RangeNode(std::unique_ptr<ExprNode> s, std::unique_ptr<ExprNode> e)
+    : start(std::move(s)), end(std::move(e)) { type = ValueType::VECTOR; }
+std::string RangeNode::toString() const {
+    return start->toString() + " .. " + end->toString();
+}
+void RangeNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
+
+// IndexNode
+IndexNode::IndexNode(std::unique_ptr<ExprNode> a, std::unique_ptr<ExprNode> i)
+    : array(std::move(a)), index(std::move(i)) { type = ValueType::UNKNOWN; }
 std::string IndexNode::toString() const {
-    return getArray()->toString() + "[" + getIndex()->toString() + "]";
+    return array->toString() + "[" + index->toString() + "]";
 }
+void IndexNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
+// GeneratorNode
+GeneratorNode::GeneratorNode(const std::string& i, std::unique_ptr<ExprNode> d, std::unique_ptr<ExprNode> b)
+    : id(i), domain(std::move(d)), body(std::move(b)) { type = ValueType::VECTOR; }
+std::string GeneratorNode::toString() const {
+    return "[ " + id + " in " + domain->toString() + " | " + body->toString() + " ]";
+}
+void GeneratorNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
+
+// FilterNode
+FilterNode::FilterNode(const std::string& i, std::unique_ptr<ExprNode> d, std::unique_ptr<ExprNode> p)
+    : id(i), domain(std::move(d)), predicate(std::move(p)) { type = ValueType::VECTOR; }
+std::string FilterNode::toString() const {
+    return "[ " + id + " in " + domain->toString() + " & " + predicate->toString() + " ]";
+}
+void FilterNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
+
+// IntDecNode
+IntDecNode::IntDecNode(const std::string& i, std::unique_ptr<ExprNode> v)
+    : id(i), value(std::move(v)) { type = ValueType::INTEGER; }
 std::string IntDecNode::toString() const {
-    return "int " + getId() + " = " + getValue()->toString();
+    return "int " + id + " = " + value->toString();
 }
+void IntDecNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
+// VectorDecNode
+VectorDecNode::VectorDecNode(const std::string& i, std::unique_ptr<ExprNode> v)
+    : id(i), vectorValue(std::move(v)) { type = ValueType::VECTOR; }
 std::string VectorDecNode::toString() const {
-    return "vector " + getId() + " = " + getVector()->toString();
+    return "vector " + id + " = " + vectorValue->toString();
 }
+void VectorDecNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
+// AssignNode
+AssignNode::AssignNode(const std::string& i, std::unique_ptr<ExprNode> v)
+    : id(i), value(std::move(v)) { type = ValueType::UNKNOWN; }
 std::string AssignNode::toString() const {
-    return getId() + " = " + getValue()->toString();
+    return id + " = " + value->toString();
 }
+void AssignNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
+// PrintNode
+PrintNode::PrintNode(std::unique_ptr<ExprNode> e)
+    : printExpr(std::move(e)) { type = ValueType::UNKNOWN; }
 std::string PrintNode::toString() const {
-    return "print(" + getPrintExpr()->toString() + ")";
+    return "print(" + printExpr->toString() + ")";
 }
+void PrintNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
+// CondNode
+CondNode::CondNode(std::unique_ptr<ExprNode> cond, std::vector<std::unique_ptr<ASTNode>> stmts)
+    : ifCond(std::move(cond)), body(std::move(stmts)) { type = ValueType::UNKNOWN; }
 std::string CondNode::toString() const {
     std::string result = "if (" + ifCond->toString() + ")\n";
-    // Print each statement in the body
     for (const auto& stmt : body) {
-        result += "  " + stmt->toString() + "\n";  // Indent body statements
+        result += "  " + stmt->toString() + "\n";
     }
     result += "fi";
     return result;
 }
+void CondNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
+// LoopNode
+LoopNode::LoopNode(std::unique_ptr<ExprNode> cond, std::vector<std::unique_ptr<ASTNode>> stmts)
+    : loopCond(std::move(cond)), body(std::move(stmts)) { type = ValueType::UNKNOWN; }
 std::string LoopNode::toString() const {
     std::string result = "loop (" + loopCond->toString() + ")\n";
-    // Print each statement in the body
     for (const auto& stat : body) {
-        result += "  " + stat->toString() + "\n";  // Indent body statements
+        result += "  " + stat->toString() + "\n";
     }
     result += "pool";
     return result;
 }
+void LoopNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
-//For visitor
-void IntNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
+// FileNode
+FileNode::FileNode(std::vector<std::unique_ptr<ASTNode>> stmts)
+    : statements(std::move(stmts)) { type = ValueType::UNKNOWN; }
+std::string FileNode::toString() const {
+    std::string result;
+    for (const auto& stmt : statements) {
+        result += stmt->toString() + "\n";
+    }
+    return result;
 }
-
-void IdNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void BinaryOpNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void RangeNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void IndexNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void GeneratorNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void FilterNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void IntDecNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void VectorDecNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void AssignNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void PrintNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void CondNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
-
-void LoopNode::accept(ASTVisitor& visitor) {
-    visitor.visit(this);
-}
+void FileNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 
 
