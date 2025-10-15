@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
   // Get the root of the parse tree. Use your base rule name.
   auto fileContext = parser.file();
   ASTBuilder builder;
-  std::unqiue_ptr<ASTNode> ast = builder.visitFile()
+  std::unqiue_ptr<ASTNode> ast = builder.visitFile();
 
   // HOW TO USE A VISITOR
   // Make the visitor
