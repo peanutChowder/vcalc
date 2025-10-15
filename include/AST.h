@@ -1,264 +1,180 @@
 #pragma once
-#include "antlr4-runtime.h"
-#include <vector>
 #include <string>
+#include <vector>
 #include <memory>
 
-class ASTVisitor; // needs to be implemented
-
-/* 
-Header file for AST tree
-Filled with constructors, getters, setters
-All implementation specific code is in AST.cpp
-
-AST types
-homogenous: single node type for all constructs
-heterogenous: different node types - this ds 
-
-TODO: implement control flow nodes
-
-*/
-class AST{
-    public:
-        AST();
-        virtual ~AST() = default;
-        virtual std::string toString() const { return "AST";}
-        virtual void accept(ASTVisitor& visitor) = 0; 
+// Type enum for all nodes
+enum class ValueType {
+    UNKNOWN,
+    INTEGER,
+    VECTOR
 };
 
-//abstract
-class ExprNode: public AST{
-    public:
-        static const int INVALID = 0;
-        static const int SCALAR = 1;
-        static const int VECTOR = 2;
-    private:
-        int evalType;
-    public:
-        //constructor
-        ExprNode();
-        //destructor - gets called automatically when an object is destroyed or out of scope
-        virtual ~ExprNode() = default;
-        //getter
-        int getEvalType() const { return evalType; }
-        //setter
-        void setEvalType(int type) {
-            evalType = type;
-        }
-        //Override this
-        std::string toString() const override;
-        //make class abstract
-        // cannot instantiate
-        // must be overridden
-        virtual void accept(ASTVisitor& visitor) = 0;
+// Forward declaration for visitor
+class ASTVisitor;
+
+// Base AST node
+class ASTNode {
+public:
+    ValueType type = ValueType::UNKNOWN;
+    virtual ~ASTNode() = default;
+    virtual std::string toString() const = 0;
+    virtual void accept(ASTVisitor& visitor) = 0;
 };
 
-//concrete
-class IntNode: public ExprNode {  
-    private:
-        int value; //attribute
-    public:
-        //constructor
-        IntNode(int value) : value(value) {}
-        //getter
-        int getValue() const { return value; }
-        void accept(ASTVisitor& visitor) override;
+// Expression base node
+class ExprNode : public ASTNode {
+public:
+    ExprNode() { type = ValueType::UNKNOWN; }
 };
 
-//concrete
-class IdNode: public ExprNode { 
-    private:
-        std::string id; //attribute
-    public:
-        //constructor
-        IdNode(const std::string& id) : id(id) {}
-        std::string getID() const { return id; }
-        void accept(ASTVisitor& visitor) override;
+// Integer literal
+class IntNode : public ExprNode {
+public:
+    int value;
+    IntNode(int v) : value(v) { type = ValueType::INTEGER; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-//concrete
-class RangeNode: public ExprNode{
-    private:
-        std::unique_ptr<ExprNode> startExpr;
-        std::unique_ptr<ExprNode> endExpr;
-    public:
-        //constructor
-        RangeNode(std::unique_ptr<ExprNode> start, std::unique_ptr<ExprNode> end):
-            startExpr(std::move(start)),
-            endExpr(std::move(end)) {}
-        ExprNode* getStartExpr() const { return startExpr.get(); }
-        ExprNode* getEndExpr() const { return endExpr.get(); }
-        std::string toString() const override;
-        void accept(ASTVisitor& visitor) override;    
+// Identifier
+class IdNode : public ExprNode {
+public:
+    std::string id;
+    IdNode(const std::string& i) : id(i) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-//concrete
-// [<domain variable> in <domain> | <expression>]
-class GeneratorNode : public ExprNode{
-    private:
-        std::string id;
-        std::unique_ptr<ExprNode> domExpr;
-        std::unique_ptr<ExprNode> bodyExpr;
-    public:
-        //constructor
-        GeneratorNode(const std::string& id,
-            std::unique_ptr<ExprNode> domain, 
-            std::unique_ptr<ExprNode> body)
-            : id(id), 
-            domExpr(std::move(domain)), 
-            bodyExpr(std::move(body)) {}
-
-        std::string getId() const { return id; }
-        ExprNode* getDomExpr() const { return domExpr.get(); }
-        ExprNode* getBodyExpr() const { return bodyExpr.get(); }
-        std::string toString() const override; 
-        void accept(ASTVisitor& visitor) override;
+// Binary operation
+class BinaryOpNode : public ExprNode {
+public:
+    std::unique_ptr<ExprNode> left;
+    std::unique_ptr<ExprNode> right;
+    std::string op;
+    BinaryOpNode(std::unique_ptr<ExprNode> l, std::unique_ptr<ExprNode> r, const std::string& o)
+        : left(std::move(l)), right(std::move(r)), op(o) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-//concrete
-// [<domain variable> in <domain> & <predicate>]
-class FilterNode: public ExprNode{
-    private:
-        std::string id;
-        std::unique_ptr<ExprNode> domExpr;
-        std::unique_ptr<ExprNode> predExpr;
-    public:
-        //constructor
-        FilterNode(const std::string& id,
-            std::unique_ptr<ExprNode> domain,
-            std::unique_ptr<ExprNode> pred)
-            : id(id),
-            domExpr(std::move(domain)),
-            predExpr(std::move(pred)) {}
-
-        std::string getId() const { return id; }
-        ExprNode* getDomExpr() const { return domExpr.get(); }
-        ExprNode* getPredExpr() const { return predExpr.get(); }
-        std::string toString() const override;
-        void accept(ASTVisitor& visitor) override;
+// Range expression
+class RangeNode : public ExprNode {
+public:
+    std::unique_ptr<ExprNode> start;
+    std::unique_ptr<ExprNode> end;
+    RangeNode(std::unique_ptr<ExprNode> s, std::unique_ptr<ExprNode> e)
+        : start(std::move(s)), end(std::move(e)) { type = ValueType::VECTOR; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-// concrete
-// this should handle all operations
-class BinaryOpNode: public ExprNode{
-    private:
-        std::unique_ptr<ExprNode> leftExpr;
-        std::unique_ptr<ExprNode> rightExpr; 
-        std::string op;
-    public:
-        //constructor
-        BinaryOpNode(const std::string& op,
-                std::unique_ptr<ExprNode> left,
-                std::unique_ptr<ExprNode> right)
-            : op(op), leftExpr(std::move(left)), rightExpr(std::move(right)) {}
-        
-        ExprNode* getLeft() const { return leftExpr.get(); }
-        ExprNode* getRight() const { return rightExpr.get(); }
-        const std::string& getOperation() const { return op; }
-        std::string toString() const override; 
-        void accept(ASTVisitor& visitor) override;
+// Index expression
+class IndexNode : public ExprNode {
+public:
+    std::unique_ptr<ExprNode> array;
+    std::unique_ptr<ExprNode> index;
+    IndexNode(std::unique_ptr<ExprNode> a, std::unique_ptr<ExprNode> i)
+        : array(std::move(a)), index(std::move(i)) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-//concrete
-// v[0] or v[0][0]
-class IndexNode: public ExprNode{
-    private:
-        std::unique_ptr<ExprNode> array;
-        std::unique_ptr<ExprNode> index;
-    public:
-        IndexNode(std::unique_ptr<ExprNode> array, std::unique_ptr<ExprNode> index)
-            : array(std::move(array)), index(std::move(index)) {}
-
-        ExprNode* getArray() const { return array.get(); }
-        ExprNode* getIndex() const { return index.get(); }
-        std::string toString() const override; 
-        void accept(ASTVisitor& visitor) override;
+// Generator expression
+class GeneratorNode : public ExprNode {
+public:
+    std::string id;
+    std::unique_ptr<ExprNode> domain;
+    std::unique_ptr<ExprNode> body;
+    GeneratorNode(const std::string& i, std::unique_ptr<ExprNode> d, std::unique_ptr<ExprNode> b)
+        : id(i), domain(std::move(d)), body(std::move(b)) { type = ValueType::VECTOR; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-//statement classes
-// int id = <expr>
-class IntDecNode: public AST{
-    private:
-        std::string id;
-        std::unique_ptr<ExprNode> value;
-    public:
-        IntDecNode(const std::string& id, std::unique_ptr<ExprNode> value):
-            id(id), value(std::move(value)) {}
-
-        const std::string& getId() const { return id; }
-        ExprNode* getValue() const { return value.get(); }
-        std::string toString() const override; 
-        void accept(ASTVisitor& visitor) override;
+// Filter expression
+class FilterNode : public ExprNode {
+public:
+    std::string id;
+    std::unique_ptr<ExprNode> domain;
+    std::unique_ptr<ExprNode> predicate;
+    FilterNode(const std::string& i, std::unique_ptr<ExprNode> d, std::unique_ptr<ExprNode> p)
+        : id(i), domain(std::move(d)), predicate(std::move(p)) { type = ValueType::VECTOR; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-// vector id = <vector>
-class VectorDecNode: public AST{
-    private:
-        std::string id;
-        std::unique_ptr<ExprNode> vec;
-    public:
-        VectorDecNode(const std::string& id, std::unique_ptr<ExprNode> vec):
-            id(id), vec(std::move(vec)) {}
-
-        const std::string& getId() const { return id; }
-        ExprNode* getVector() const { return vec.get(); }
-        std::string toString() const override; 
-        void accept(ASTVisitor& visitor) override;
+// Integer declaration
+class IntDecNode : public ASTNode {
+public:
+    std::string id;
+    std::unique_ptr<ExprNode> value;
+    IntDecNode(const std::string& i, std::unique_ptr<ExprNode> v)
+        : id(i), value(std::move(v)) { type = ValueType::INTEGER; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-class AssignNode: public AST{
-    private:
-        std::string id;
-        std::unique_ptr<ExprNode> value;
-    public:
-        AssignNode(const std::string& id, std::unique_ptr<ExprNode> value)
-            : id(id), value(std::move(value)) {}
-        
-        const std::string& getId() const { return id; }
-        ExprNode* getValue() const { return value.get(); }
-        std::string toString() const override;
-        void accept(ASTVisitor& visitor) override;
+// Vector declaration
+class VectorDecNode : public ASTNode {
+public:
+    std::string id;
+    std::unique_ptr<ExprNode> vectorValue;
+    VectorDecNode(const std::string& i, std::unique_ptr<ExprNode> v)
+        : id(i), vectorValue(std::move(v)) { type = ValueType::VECTOR; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-// print(<expr>)
-class PrintNode: public AST{
-    private:
-        std::unique_ptr<ExprNode> printExpr;
-    public:
-        PrintNode(std::unique_ptr<ExprNode> printStat):
-            printExpr(std::move(printStat)) {}
-        ExprNode* getPrintExpr() const { return printExpr.get(); }
-        std::string toString() const override; 
-        void accept(ASTVisitor& visitor) override;
+// Assignment
+class AssignNode : public ASTNode {
+public:
+    std::string id;
+    std::unique_ptr<ExprNode> value;
+    AssignNode(const std::string& i, std::unique_ptr<ExprNode> v)
+        : id(i), value(std::move(v)) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-// if (<expr>) stat* fi
-class CondNode: public AST{
-    private:
-        std::unique_ptr<ExprNode> ifCond;
-        std::vector<std::unique_ptr<AST>> body;
-    public:
-        CondNode(std::unique_ptr<ExprNode> cond,
-            std::vector<std::unique_ptr<AST>> stats):
-            ifCond(std::move(cond)), body(std::move(stats)) {}
-        ExprNode* getCond() const { return ifCond.get(); }
-        const std::vector<std::unique_ptr<AST>>& getBody() const { return body; }
-        std::string toString() const override;
-        void accept(ASTVisitor& visitor) override;
+// Print statement
+class PrintNode : public ASTNode {
+public:
+    std::unique_ptr<ExprNode> printExpr;
+    PrintNode(std::unique_ptr<ExprNode> e)
+        : printExpr(std::move(e)) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
 };
 
-// loop (expr) stat* pool
-class LoopNode: public AST{
-    private:
-        std::unique_ptr<ExprNode> loopCond;
-        std::vector<std::unique_ptr<AST>> body;
-    public:
-        LoopNode(std::unique_ptr<ExprNode> cond,
-            std::vector<std::unique_ptr<AST>> stats):
-            loopCond(std::move(cond)), body(std::move(stats)) {}
+// Conditional statement
+class CondNode : public ASTNode {
+public:
+    std::unique_ptr<ExprNode> ifCond;
+    std::vector<std::unique_ptr<ASTNode>> body;
+    CondNode(std::unique_ptr<ExprNode> cond, std::vector<std::unique_ptr<ASTNode>> stmts)
+        : ifCond(std::move(cond)), body(std::move(stmts)) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
+};
 
-        ExprNode* getCond() const { return loopCond.get(); }
-        const std::vector<std::unique_ptr<AST>>& getBody() const { return body; }
-        std::string toString() const override;
-        void accept(ASTVisitor& visitor) override;
+// Loop statement
+class LoopNode : public ASTNode {
+public:
+    std::unique_ptr<ExprNode> loopCond;
+    std::vector<std::unique_ptr<ASTNode>> body;
+    LoopNode(std::unique_ptr<ExprNode> cond, std::vector<std::unique_ptr<ASTNode>> stmts)
+        : loopCond(std::move(cond)), body(std::move(stmts)) { type = ValueType::UNKNOWN; }
+    std::string toString() const override;
+    void accept(ASTVisitor& visitor) override;
+};
+
+// File root node
+class FileNode : public ASTNode {
+public:
+    std::vector<std::unique_ptr<ASTNode>> statements;
+    FileNode(std::vector<std::unique_ptr<ASTNode>> stmts)
+        : statements(std::move(stmts)) { type = ValueType::UNKNOWN; }
+    std::string toString() const override { return "FileNode"; }
+    void accept(ASTVisitor& visitor) override;
 };
