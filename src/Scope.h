@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 
-namespace vcalc {
 
 struct SymbolInfo {
     std::string identifier;
@@ -41,5 +40,3 @@ private:
     Scope* parent_;
     std::vector<std::unique_ptr<Scope>> children_;
 };
-
-} 

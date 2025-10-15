@@ -172,8 +172,8 @@ public:
 // File root node
 class FileNode : public ASTNode {
 public:
-    std::vector<std::unique_ptr<ASTNode>> statements;
-    FileNode(std::vector<std::unique_ptr<ASTNode>> stmts)
+    std::vector<std::shared_ptr<ASTNode>> statements;
+    FileNode(std::vector<std::shared_ptr<ASTNode>> stmts)
         : statements(std::move(stmts)) { type = ValueType::UNKNOWN; }
     std::string toString() const override { return "FileNode"; }
     void accept(ASTVisitor& visitor) override;
