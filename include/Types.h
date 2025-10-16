@@ -11,14 +11,7 @@ enum class ValueType {
     VECTOR
 };
 
-const std::string toString(ValueType type) {
-    switch (type) {
-    case ValueType::UNKNOWN: return "unknown";
-    case ValueType::INTEGER: return "int";
-    case ValueType::VECTOR:  return "vector";
-    }
-    return "invalid";
-}
+std::string toString(ValueType type);
 
 inline ValueType promote(ValueType from, ValueType to) {
     switch (from) {
