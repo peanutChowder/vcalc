@@ -26,30 +26,30 @@ expr
 
 // equality: ==, !=
 equalityExpr
-    : comparisonExpr (op=(EQEQ|NEQ) comparisonExpr)*
+    : comparisonExpr ((EQEQ|NEQ) comparisonExpr)*
     ;
 
 // comparison: <, >
 comparisonExpr
-    : addSubExpr (op=(LT|GT) addSubExpr)*
+    : addSubExpr ((LT|GT) addSubExpr)*
     ;
 
 // addition and subtraction: +, -
 addSubExpr
-    : mulDivExpr (op=(ADD|MINUS) mulDivExpr)*
+    : mulDivExpr ((ADD|MINUS) mulDivExpr)*
     ;
 
 // multiplication and division: *, /
 mulDivExpr
-    : rangeExpr (op=(MULT|DIV) rangeExpr)*
+    : rangeExpr (MULT|DIV) rangeExpr)*
     ;
 
-// range and index: .. and []
+// range 
 rangeExpr
     : indexExpr (DOTDOT indexExpr)?
     ;
 
-// index (can chain: a[0][1])
+// index (can NOT chain, e.g. a[0][1] is invalid)
 indexExpr
     : atom (SQLEFT expr SQRIGHT)?
     ;
