@@ -2,13 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
-
-// Type enum for all nodes
-enum class ValueType {
-    UNKNOWN,
-    INTEGER,
-    VECTOR
-};
+#include "Types.h"
 
 // Forward declaration for visitor
 class ASTVisitor;

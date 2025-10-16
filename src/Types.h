@@ -4,29 +4,32 @@
 #include <vector>
 #include <variant>
 
-// All possible runtime value types
-// ------
-using Value = std::variant<int>; 
-
-
-enum class SymbolType {
-    Int,
-    Bool,
-    Vector
+// Type enum for all nodes
+enum class ValueType {
+    UNKNOWN,
+    INTEGER,
+    VECTOR
 };
 
-struct EvalResult {
-    SymbolType type;
-    Value value;
-};
-
-std::string toString(SymbolType type);
-std::optional<SymbolType> castResult(SymbolType to, SymbolType from);
-int semanticParseIntLiteral(const std::string& literal);
-void semanticAssertValidTypeValue(SymbolType type, const std::string& value);
-bool canAssign(SymbolType destination, SymbolType source);
-SymbolType inferExpressionType(const std::vector<SymbolType>& operands,
-                              const std::vector<SymbolType>& acceptableOperandTargets,
-                              SymbolType resultType,
-                              const std::string& errorContext);
-Value coerceValue(const Value& v, SymbolType dst);
+inline ValueType promote(ValueType from, ValueType to) {
+    switch (from) {
+        case ValueType::UNKNOWN:
+            return ValueType::UNKNOWN;
+            break;
+        case ValueType::INTEGER:
+            switch (to) {
+                case ValueType::UNKNOWN: return ValueType::UNKNOWN;
+                case ValueType::INTEGER: return ValueType::INTEGER;
+                case ValueType::VECTOR:  return ValueType::VECTOR;
+            }
+            break;
+        case ValueType::VECTOR:
+            switch (to) {
+                case ValueType::UNKNOWN: return ValueType::UNKNOWN;
+                case ValueType::INTEGER: return ValueType::UNKNOWN;
+                case ValueType::VECTOR:  return ValueType::VECTOR;
+            }
+            break;
+    }
+    return ValueType::UNKNOWN;
+}
