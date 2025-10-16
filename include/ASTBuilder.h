@@ -10,7 +10,7 @@ Class converts Parse tree produced by ANTLR into AST Tree
 class ASTBuilder: public VCalcBaseVisitor{
     public:
         std::any visitFile(VCalcParser::FileContext *ctx) override;
-        std::any visitExpr(VCalcParser::ExprContext *ctx);
+        std::any visitExpr(VCalcParser::ExprContext *ctx) override;
         std::any visitIntDec(VCalcParser::IntDecContext *ctx) override;
         std::any visitVectorDec(VCalcParser::VectorDecContext *ctx) override;
         std::any visitAssign(VCalcParser::AssignContext *ctx) override;
