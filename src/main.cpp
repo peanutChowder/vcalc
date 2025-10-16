@@ -12,6 +12,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <any>
 
 int main(int argc, char **argv) {
   if (argc < 3) {
@@ -30,7 +31,8 @@ int main(int argc, char **argv) {
   // Get the root of the parse tree. Use your base rule name.
   auto fileContext = parser.file();
   ASTBuilder builder;
-  std::unique_ptr<ASTNode> ast = builder.visitFile();
+  std::any astAny = builder.visitFile(fileContext);
+  auto ast = std::any_cast<std::shared_ptr<FileNode>>(astAny);
 
   // HOW TO USE A VISITOR
   // Make the visitor
