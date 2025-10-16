@@ -9,23 +9,24 @@ Class converts Parse tree produced by ANTLR into AST Tree
 */
 class ASTBuilder: public VCalcBaseVisitor{
     public:
-        std::unique_ptr<ASTNode> visitFile(VCalcParser::FileContext *ctx) override;
-        std::unique_ptr<IntDecNode> visitIntDec(VCalcParser::IntDecContext *ctx) override;
-        std::unique_ptr<VectorDecNode> visitVectorDec(VCalcParser::VectorDecContext *ctx) override;
-        std::unique_ptr<AssignNode> visitAssign(VCalcParser::AssignContext *ctx) override;
-        std::unique_ptr<PrintNode> visitPrint(VCalcParser::PrintContext *ctx) override;
-        std::unique_ptr<CondNode> visitCond(VCalcParser::CondContext *ctx) override;
-        std::unique_ptr<LoopNode> visitLoop(VCalcParser::LoopContext *ctx) override;
+        std::any visitFile(VCalcParser::FileContext *ctx) override;
+        std::any visitExpr(VCalcParser::ExprContext *ctx) override;
+        std::any visitIntDec(VCalcParser::IntDecContext *ctx) override;
+        std::any visitVectorDec(VCalcParser::VectorDecContext *ctx) override;
+        std::any visitAssign(VCalcParser::AssignContext *ctx) override;
+        std::any visitPrint(VCalcParser::PrintContext *ctx) override;
+        std::any visitCond(VCalcParser::CondContext *ctx) override;
+        std::any visitLoop(VCalcParser::LoopContext *ctx) override;
         
-        std::unique_ptr<BinaryOpNode> visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) override;
-        std::unique_ptr<BinaryOpNode> visitComparisonExpr(VCalcParser::ComparisonExprContext *ctx) override;
-        std::unique_ptr<BinaryOpNode> visitAddSubExpr(VCalcParser::AddSubExprContext *ctx) override;
-        std::unique_ptr<BinaryOpNode> visitMulDivExpr(VCalcParser::MulDivExprContext *ctx) override;
-        std::unique_ptr<RangeNode> visitRangeExpr(VCalcParser::RangeExprContext *ctx) override;
-        std::unique_ptr<IndexNode> visitIndexExpr(VCalcParser::IndexExprContext *ctx) override;
+        std::any visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) override;
+        std::any visitComparisonExpr(VCalcParser::ComparisonExprContext *ctx) override;
+        std::any visitAddSubExpr(VCalcParser::AddSubExprContext *ctx) override;
+        std::any visitMulDivExpr(VCalcParser::MulDivExprContext *ctx) override;
+        std::any visitRangeExpr(VCalcParser::RangeExprContext *ctx) override;
+        std::any visitIndexExpr(VCalcParser::IndexExprContext *ctx) override;
         
-        std::unique_ptr<GeneratorNode> visitGenerator(VCalcParser::GeneratorContext *ctx) override;
-        std::unique_ptr<FilterNode> visitFilter(VCalcParser::FilterContext *ctx) override;
-        std::unique_ptr<ExprNode> visitAtom(VCalcParser::AtomContext *ctx) override;
+        std::any visitGenerator(VCalcParser::GeneratorContext *ctx) override;
+        std::any visitFilter(VCalcParser::FilterContext *ctx) override;
+        std::any visitAtom(VCalcParser::AtomContext *ctx) override;
     
 };
