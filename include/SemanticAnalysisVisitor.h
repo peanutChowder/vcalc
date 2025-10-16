@@ -31,7 +31,7 @@ class SemanticAnalysisVisitor: ASTVisitor {
         // Persistent scope tree and context index
         std::unique_ptr<Scope> root_;
         Scope* current_ = nullptr;
-        std::unordered_map<ASTNode*, Scope*> scopeByCtx_;
+        std::unordered_map<const ASTNode*, Scope*> scopeByCtx_;
 
         void enterScopeFor(const ASTNode* ownerCtx);
         void exitScope();
