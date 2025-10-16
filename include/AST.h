@@ -43,8 +43,8 @@ public:
 // Identifier
 class IdNode : public ExprNode {
 public:
-    std::string id;
-    IdNode(const std::string& i) : id(i) { type = ValueType::UNKNOWN; }
+    std::string name;
+    IdNode(const std::string& i) : name(i) { type = ValueType::UNKNOWN; }
     std::string toString() const override;
     void accept(ASTVisitor& visitor) override;
 };
@@ -86,10 +86,10 @@ public:
 // Generator expression
 class GeneratorNode : public ExprNode {
 public:
-    std::string id;
+    std::shared_ptr<IdNode> id;
     std::shared_ptr<ExprNode> domain;
     std::shared_ptr<ExprNode> body;
-    GeneratorNode(const std::string& i, std::shared_ptr<ExprNode> d, std::shared_ptr<ExprNode> b)
+    GeneratorNode(std::shared_ptr<IdNode> i, std::shared_ptr<ExprNode> d, std::shared_ptr<ExprNode> b)
         : id(i), domain(std::move(d)), body(std::move(b)) { type = ValueType::VECTOR; }
     std::string toString() const override;
     void accept(ASTVisitor& visitor) override;
@@ -98,10 +98,10 @@ public:
 // Filter expression
 class FilterNode : public ExprNode {
 public:
-    std::string id;
+    std::shared_ptr<IdNode> id;
     std::shared_ptr<ExprNode> domain;
     std::shared_ptr<ExprNode> predicate;
-    FilterNode(const std::string& i, std::shared_ptr<ExprNode> d, std::shared_ptr<ExprNode> p)
+    FilterNode(std::shared_ptr<IdNode> i, std::shared_ptr<ExprNode> d, std::shared_ptr<ExprNode> p)
         : id(i), domain(std::move(d)), predicate(std::move(p)) { type = ValueType::VECTOR; }
     std::string toString() const override;
     void accept(ASTVisitor& visitor) override;
@@ -110,9 +110,9 @@ public:
 // Integer declaration
 class IntDecNode : public ASTNode {
 public:
-    std::string id;
+    std::shared_ptr<IdNode> id;
     std::shared_ptr<ExprNode> value;
-    IntDecNode(const std::string& i, std::shared_ptr<ExprNode> v)
+    IntDecNode(std::shared_ptr<IdNode> i, std::shared_ptr<ExprNode> v)
         : id(i), value(std::move(v)) { type = ValueType::INTEGER; }
     std::string toString() const override;
     void accept(ASTVisitor& visitor) override;
@@ -121,9 +121,9 @@ public:
 // Vector declaration
 class VectorDecNode : public ASTNode {
 public:
-    std::string id;
+    std::shared_ptr<IdNode> id;
     std::shared_ptr<ExprNode> vectorValue;
-    VectorDecNode(const std::string& i, std::shared_ptr<ExprNode> v)
+    VectorDecNode(std::shared_ptr<IdNode> i, std::shared_ptr<ExprNode> v)
         : id(i), vectorValue(std::move(v)) { type = ValueType::VECTOR; }
     std::string toString() const override;
     void accept(ASTVisitor& visitor) override;
@@ -132,9 +132,9 @@ public:
 // Assignment
 class AssignNode : public ASTNode {
 public:
-    std::string id;
+    std::shared_ptr<IdNode> id;
     std::shared_ptr<ExprNode> value;
-    AssignNode(const std::string& i, std::shared_ptr<ExprNode> v)
+    AssignNode(std::shared_ptr<IdNode> i, std::shared_ptr<ExprNode> v)
         : id(i), value(std::move(v)) { type = ValueType::UNKNOWN; }
     std::string toString() const override;
     void accept(ASTVisitor& visitor) override;

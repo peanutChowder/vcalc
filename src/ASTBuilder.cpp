@@ -23,19 +23,19 @@ std::any ASTBuilder::visitExpr(VCalcParser::ExprContext *ctx) {
 }
 
 std::any ASTBuilder::visitAssign(VCalcParser::AssignContext *ctx) {
-    std::string id = ctx->ID()->getText();
+    std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
     auto expr = visit(ctx->expr());
     return std::make_shared<AssignNode>(id, std::move(expr));
 }
 
 std::any ASTBuilder::visitIntDec(VCalcParser::IntDecContext *ctx) {
-    std::string id = ctx->ID()->getText();
+    std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
     auto expr = visit(ctx->expr());
     return std::make_shared<IntDecNode>(id, std::move(expr));
 }
 
 std::any ASTBuilder::visitVectorDec(VCalcParser::VectorDecContext *ctx) {
-    std::string id = ctx->ID()->getText();
+    std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
     auto expr = visit(ctx->expr());
     return std::make_shared<VectorDecNode>(id, std::move(expr));
 }
@@ -160,14 +160,14 @@ std::any ASTBuilder::visitIndexExpr(VCalcParser::IndexExprContext *ctx) {
 }
 
 std::any ASTBuilder::visitGenerator(VCalcParser::GeneratorContext *ctx) {
-    std::string id = ctx->ID()->getText();
+    std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
     auto dom = visit(ctx->expr(0));
     auto body = visit(ctx->expr(1));
     return std::make_shared<GeneratorNode>(id, std::move(dom), std::move(body));
 }
 
 std::any ASTBuilder::visitFilter(VCalcParser::FilterContext *ctx) {
-    std::string id = ctx->ID()->getText();
+    std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
     auto dom = visit(ctx->expr(0));
     auto pred = visit(ctx->expr(1));
     return std::make_shared<FilterNode>(id, std::move(dom), std::move(pred));
@@ -189,8 +189,8 @@ std::any ASTBuilder::visitAtom(VCalcParser::AtomContext *ctx) {
             throw std::runtime_error("RangeError: Integer literal '" + literal + "' is out of range for signed int.");
         }
     } else if (ctx->ID()) {
-        std::string id = ctx->ID()->getText();
-        return std::make_shared<IdNode>(id);
+        std::string name = ctx->ID()->getText();
+        return std::make_shared<IdNode>(name);
     } else if (ctx->generator()) {
         return visitGenerator(ctx->generator());
     } else if (ctx->filter()) {
