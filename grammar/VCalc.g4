@@ -41,7 +41,7 @@ addSubExpr
 
 // multiplication and division: *, /
 mulDivExpr
-    : rangeExpr (MULT|DIV) rangeExpr)*
+    : rangeExpr ((MULT|DIV) rangeExpr)*
     ;
 
 // range 
