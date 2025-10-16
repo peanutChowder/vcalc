@@ -7,7 +7,7 @@ namespace vcalc {
 
 Scope::Scope(Scope* parent) : parent_(parent) {}
 
-bool Scope::declare(const std::string& identifier, SymbolType type) {
+bool Scope::declare(const std::string& identifier, ValueType type) {
     if (symbols_.find(identifier) != symbols_.end()) {
         return false;
     }

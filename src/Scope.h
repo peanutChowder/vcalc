@@ -9,20 +9,17 @@
 
 struct SymbolInfo {
     std::string identifier;
-    SymbolType type;
-    std::optional<Value> value; // run-time value
+    ValueType type;
 };
 
 class Scope {
 public:
     explicit Scope(Scope* parent = nullptr);
 
-    bool declare(const std::string& identifier, SymbolType type);
+    bool declare(const std::string& identifier, ValueType type);
 
     SymbolInfo* resolve(const std::string& identifier);
     const SymbolInfo* resolve(const std::string& identifier) const;
-
-    void assign(const std::string& identifier, const Value& value);
 
     Scope* parent() const { return parent_; }
     const std::unordered_map<std::string, SymbolInfo>& symbols() const { return symbols_; }
