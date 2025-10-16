@@ -24,29 +24,38 @@ std::any ASTBuilder::visitExpr(VCalcParser::ExprContext *ctx) {
 
 std::any ASTBuilder::visitAssign(VCalcParser::AssignContext *ctx) {
     std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
-    auto expr = visit(ctx->expr());
-    return std::make_shared<AssignNode>(id, std::move(expr));
+    auto exprAny = visit(ctx->expr());
+    auto expr = std::any_cast<std::shared_ptr<ExprNode>>(exprAny);
+    auto node = std::make_shared<AssignNode>(id, expr);
+    return std::static_pointer_cast<ASTNode>(node);
 }
 
 std::any ASTBuilder::visitIntDec(VCalcParser::IntDecContext *ctx) {
     std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
-    auto expr = visit(ctx->expr());
-    return std::make_shared<IntDecNode>(id, std::move(expr));
+    auto exprAny = visit(ctx->expr());
+    auto expr = std::any_cast<std::shared_ptr<ExprNode>>(exprAny);
+    auto node = std::make_shared<IntDecNode>(id, expr);
+    return std::static_pointer_cast<ASTNode>(node);
 }
 
 std::any ASTBuilder::visitVectorDec(VCalcParser::VectorDecContext *ctx) {
     std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
-    auto expr = visit(ctx->expr());
-    return std::make_shared<VectorDecNode>(id, std::move(expr));
+    auto exprAny = visit(ctx->expr());
+    auto expr = std::any_cast<std::shared_ptr<ExprNode>>(exprAny);
+    auto node = std::make_shared<VectorDecNode>(id, expr);
+    return std::static_pointer_cast<ASTNode>(node);
 }
 
 std::any ASTBuilder::visitPrint(VCalcParser::PrintContext *ctx) {
-    auto expr = visit(ctx->expr());
-    return std::make_shared<PrintNode>(std::move(expr));
+    auto exprAny = visit(ctx->expr());
+    auto expr = std::any_cast<std::shared_ptr<ExprNode>>(exprAny);
+    auto node = std::make_shared<PrintNode>(expr);
+    return std::static_pointer_cast<ASTNode>(node);
 }
 
 std::any ASTBuilder::visitCond(VCalcParser::CondContext *ctx) {
-    auto condExpr = visit(ctx->expr());
+    auto condAny = visit(ctx->expr());
+    auto condExpr = std::any_cast<std::shared_ptr<ExprNode>>(condAny);
     std::vector<std::shared_ptr<ASTNode>> body;
     for (auto statCtx : ctx->blockStat()) {
         std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visit(statCtx));
@@ -54,11 +63,13 @@ std::any ASTBuilder::visitCond(VCalcParser::CondContext *ctx) {
             body.push_back(stmt);
         }
     }
-    return std::make_shared<CondNode>(std::move(condExpr), std::move(body));
+    auto node = std::make_shared<CondNode>(condExpr, std::move(body));
+    return std::static_pointer_cast<ASTNode>(node);
 }
 
 std::any ASTBuilder::visitLoop(VCalcParser::LoopContext *ctx) {
-    auto condExpr = visit(ctx->expr());
+    auto condAny = visit(ctx->expr());
+    auto condExpr = std::any_cast<std::shared_ptr<ExprNode>>(condAny);
     std::vector<std::shared_ptr<ASTNode>> body;
     for (auto statCtx : ctx->blockStat()) {
         std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visit(statCtx));
@@ -66,7 +77,8 @@ std::any ASTBuilder::visitLoop(VCalcParser::LoopContext *ctx) {
             body.push_back(std::move(stmt));
         }
     }
-    return std::make_shared<LoopNode>(std::move(condExpr), std::move(body));
+    auto node = std::make_shared<LoopNode>(condExpr, std::move(body));
+    return std::static_pointer_cast<ASTNode>(node);
 }
 
 std::any ASTBuilder::visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) {
@@ -139,38 +151,46 @@ std::any ASTBuilder::visitRangeExpr(VCalcParser::RangeExprContext *ctx) {
         // If there's only one indexExpr and no '..', return it directly (do not wrap in RangeNode)
         return visitIndexExpr(ctx->indexExpr(0));
     }
-    auto start = visitIndexExpr(ctx->indexExpr(0));
-    auto end = visitIndexExpr(ctx->indexExpr(1));
-    return std::make_shared<RangeNode>(
-        std::any_cast<std::shared_ptr<ExprNode>>(start),
-        std::any_cast<std::shared_ptr<ExprNode>>(end)
+    auto startAny = visitIndexExpr(ctx->indexExpr(0));
+    auto endAny = visitIndexExpr(ctx->indexExpr(1));
+    auto node = std::make_shared<RangeNode>(
+        std::any_cast<std::shared_ptr<ExprNode>>(startAny),
+        std::any_cast<std::shared_ptr<ExprNode>>(endAny)
     );
+    return std::static_pointer_cast<ExprNode>(node);
 }
 
 std::any ASTBuilder::visitIndexExpr(VCalcParser::IndexExprContext *ctx) {
-    auto array = visit(ctx->atom());
+    auto arrayAny = visit(ctx->atom());
+    auto array = std::any_cast<std::shared_ptr<ExprNode>>(arrayAny);
     std::shared_ptr<ExprNode> index = nullptr;
     if (ctx->expr()) {
         index = std::any_cast<std::shared_ptr<ExprNode>>(visit(ctx->expr()));
     }
-    return std::make_shared<IndexNode>(
-        std::any_cast<std::shared_ptr<ExprNode>>(array),
-        index
-    );
+    auto node = std::make_shared<IndexNode>(array, index);
+    return std::static_pointer_cast<ExprNode>(node);
 }
 
 std::any ASTBuilder::visitGenerator(VCalcParser::GeneratorContext *ctx) {
     std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
-    auto dom = visit(ctx->expr(0));
-    auto body = visit(ctx->expr(1));
-    return std::make_shared<GeneratorNode>(id, std::move(dom), std::move(body));
+    auto domAny = visit(ctx->expr(0));
+    auto bodyAny = visit(ctx->expr(1));
+    auto node = std::make_shared<GeneratorNode>(
+        id,
+        std::any_cast<std::shared_ptr<ExprNode>>(domAny),
+        std::any_cast<std::shared_ptr<ExprNode>>(bodyAny));
+    return std::static_pointer_cast<ExprNode>(node);
 }
 
 std::any ASTBuilder::visitFilter(VCalcParser::FilterContext *ctx) {
     std::shared_ptr<IdNode> id = std::make_shared<IdNode>(ctx->ID()->getText());
-    auto dom = visit(ctx->expr(0));
-    auto pred = visit(ctx->expr(1));
-    return std::make_shared<FilterNode>(id, std::move(dom), std::move(pred));
+    auto domAny = visit(ctx->expr(0));
+    auto predAny = visit(ctx->expr(1));
+    auto node = std::make_shared<FilterNode>(
+        id,
+        std::any_cast<std::shared_ptr<ExprNode>>(domAny),
+        std::any_cast<std::shared_ptr<ExprNode>>(predAny));
+    return std::static_pointer_cast<ExprNode>(node);
 }
 
 std::any ASTBuilder::visitAtom(VCalcParser::AtomContext *ctx) {
@@ -182,7 +202,8 @@ std::any ASTBuilder::visitAtom(VCalcParser::AtomContext *ctx) {
             if (parsedChars != literal.size()) {
                 throw std::runtime_error("TypeError: Integer literal '" + literal + "' is not a valid signed int.");
             }
-            return std::make_shared<IntNode>(value);
+            auto node = std::make_shared<IntNode>(value);
+            return std::static_pointer_cast<ExprNode>(node);
         } catch (const std::invalid_argument&) {
             throw std::runtime_error("TypeError: Integer literal '" + literal + "' is not a valid signed int.");
         } catch (const std::out_of_range&) {
@@ -190,7 +211,8 @@ std::any ASTBuilder::visitAtom(VCalcParser::AtomContext *ctx) {
         }
     } else if (ctx->ID()) {
         std::string name = ctx->ID()->getText();
-        return std::make_shared<IdNode>(name);
+        auto node = std::make_shared<IdNode>(name);
+        return std::static_pointer_cast<ExprNode>(node);
     } else if (ctx->generator()) {
         return visitGenerator(ctx->generator());
     } else if (ctx->filter()) {
@@ -198,5 +220,5 @@ std::any ASTBuilder::visitAtom(VCalcParser::AtomContext *ctx) {
     } else if (ctx->expr()) {
         return visit(ctx->expr());
     }
-    return nullptr;
+    return std::shared_ptr<ExprNode>{};
 }
