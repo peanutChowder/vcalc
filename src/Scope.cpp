@@ -1,4 +1,5 @@
 #include "Scope.h"
+#include "Types.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -12,7 +13,7 @@ bool Scope::declare(const std::string& identifier, ValueType type) {
         return false;
     }
 
-    symbols_.emplace(identifier, SymbolInfo{identifier, type, std::nullopt});
+    symbols_.emplace(identifier, SymbolInfo{identifier, type});
     return true;
 }
 
@@ -36,14 +37,6 @@ const SymbolInfo* Scope::resolve(const std::string& identifier) const {
         return parent_->resolve(identifier);
     }
     return nullptr;
-}
-
-void Scope::assign(const std::string& identifier, const Value& value) {
-    SymbolInfo* binding = resolve(identifier);
-    if (binding == nullptr) {
-        throw std::runtime_error("Variable " + identifier + " used before declaration.");
-    }
-    binding->value = value;
 }
 
 Scope* Scope::createChild() {
