@@ -1,3 +1,21 @@
+#pragma once
+
+// Forward declarations
+class FileNode;
+class CondNode;
+class LoopNode;
+class IntDecNode;
+class VectorDecNode;
+class AssignNode;
+class IntNode;
+class IdNode;
+class BinaryOpNode;
+class RangeNode;
+class IndexNode;
+class GeneratorNode;
+class FilterNode;
+class PrintNode;
+
 class ASTVisitor {
 public:
     virtual void visit(FileNode* node) = 0;
