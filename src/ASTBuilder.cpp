@@ -69,59 +69,93 @@ std::any ASTBuilder::visitLoop(VCalcParser::LoopContext *ctx) {
 }
 
 std::any ASTBuilder::visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) {
-    if (ctx->comparisonExpr().size() == 1) {
-        return visitComparisonExpr(ctx->comparisonExpr(0));
+    size_t n = ctx->comparisonExpr().size();
+    std::shared_ptr<ExprNode> node = std::any_cast<std::shared_ptr<ExprNode>>(visitComparisonExpr(ctx->comparisonExpr(0)));
+    for (size_t i = 1; i < n; ++i) {
+        // Find which operator was used at this position (i-1)
+        std::string op;
+        if (ctx->EQEQ(i-1)) {
+            op = ctx->EQEQ(i-1)->getText();
+        } else if (ctx->NEQ(i-1)) {
+            op = ctx->NEQ(i-1)->getText();
+        }
+        auto right = std::any_cast<std::shared_ptr<ExprNode>>(visitComparisonExpr(ctx->comparisonExpr(i)));
+        node = std::make_shared<BinaryOpNode>(node, right, op);
     }
-    auto left = visitComparisonExpr(ctx->comparisonExpr(0));
-    auto right = visitComparisonExpr(ctx->comparisonExpr(1));
-    std::string op = ctx->op->getText();
-    return std::make_shared<BinaryOpNode>(std::move(left), std::move(right), op);
+    return node;
 }
 
 std::any ASTBuilder::visitComparisonExpr(VCalcParser::ComparisonExprContext *ctx) {
-    if (ctx->addSubExpr().size() == 1) {
-        return visitAddSubExpr(ctx->addSubExpr(0));
+    size_t n = ctx->addSubExpr().size();
+    std::shared_ptr<ExprNode> node = std::any_cast<std::shared_ptr<ExprNode>>(visitAddSubExpr(ctx->addSubExpr(0)));
+    for (size_t i = 1; i < n; ++i) {
+        std::string op;
+        if (ctx->LT(i-1)) {
+            op = ctx->LT(i-1)->getText();
+        } else if (ctx->GT(i-1)) {
+            op = ctx->GT(i-1)->getText();
+        }
+        auto right = std::any_cast<std::shared_ptr<ExprNode>>(visitAddSubExpr(ctx->addSubExpr(i)));
+        node = std::make_shared<BinaryOpNode>(node, right, op);
     }
-    auto left = visitAddSubExpr(ctx->addSubExpr(0));
-    auto right = visitAddSubExpr(ctx->addSubExpr(1));
-    std::string op = ctx->op->getText();
-    return std::make_shared<BinaryOpNode>(std::move(left), std::move(right), op);
+    return node;
 }
 
 std::any ASTBuilder::visitAddSubExpr(VCalcParser::AddSubExprContext *ctx) {
-    if (ctx->mulDivExpr().size() == 1) {
-        return visitMulDivExpr(ctx->mulDivExpr(0));
+    size_t n = ctx->mulDivExpr().size();
+    std::shared_ptr<ExprNode> node = std::any_cast<std::shared_ptr<ExprNode>>(visitMulDivExpr(ctx->mulDivExpr(0)));
+    for (size_t i = 1; i < n; ++i) {
+        std::string op;
+        if (ctx->ADD(i-1)) {
+            op = ctx->ADD(i-1)->getText();
+        } else if (ctx->MINUS(i-1)) {
+            op = ctx->MINUS(i-1)->getText();
+        }
+        auto right = std::any_cast<std::shared_ptr<ExprNode>>(visitMulDivExpr(ctx->mulDivExpr(i)));
+        node = std::make_shared<BinaryOpNode>(node, right, op);
     }
-    auto left = visitMulDivExpr(ctx->mulDivExpr(0));
-    auto right = visitMulDivExpr(ctx->mulDivExpr(1));
-    std::string op = ctx->op->getText();
-    return std::make_shared<BinaryOpNode>(std::move(left), std::move(right), op);
+    return node;
 }
 
 std::any ASTBuilder::visitMulDivExpr(VCalcParser::MulDivExprContext *ctx) {
-    if (ctx->rangeExpr().size() == 1) {
-        return visitRangeExpr(ctx->rangeExpr(0));
+    size_t n = ctx->rangeExpr().size();
+    std::shared_ptr<ExprNode> node = std::any_cast<std::shared_ptr<ExprNode>>(visitRangeExpr(ctx->rangeExpr(0)));
+    for (size_t i = 1; i < n; ++i) {
+        std::string op;
+        if (ctx->MULT(i-1)) {
+            op = ctx->MULT(i-1)->getText();
+        } else if (ctx->DIV(i-1)) {
+            op = ctx->DIV(i-1)->getText();
+        }
+        auto right = std::any_cast<std::shared_ptr<ExprNode>>(visitRangeExpr(ctx->rangeExpr(i)));
+        node = std::make_shared<BinaryOpNode>(node, right, op);
     }
-    auto left = visitRangeExpr(ctx->rangeExpr(0));
-    auto right = visitRangeExpr(ctx->rangeExpr(1));
-    std::string op = ctx->op->getText();
-    return std::make_shared<BinaryOpNode>(std::move(left), std::move(right), op);
+    return node;
 }
 
 std::any ASTBuilder::visitRangeExpr(VCalcParser::RangeExprContext *ctx) {
     if (ctx->indexExpr().size() == 1) {
-        auto single = visitIndexExpr(ctx->indexExpr(0));
-        return std::make_shared<RangeNode>(std::move(single), nullptr);
+        // If there's only one indexExpr and no '..', return it directly (do not wrap in RangeNode)
+        return visitIndexExpr(ctx->indexExpr(0));
     }
     auto start = visitIndexExpr(ctx->indexExpr(0));
     auto end = visitIndexExpr(ctx->indexExpr(1));
-    return std::make_shared<RangeNode>(std::move(start), std::move(end));
+    return std::make_shared<RangeNode>(
+        std::any_cast<std::shared_ptr<ExprNode>>(start),
+        std::any_cast<std::shared_ptr<ExprNode>>(end)
+    );
 }
 
 std::any ASTBuilder::visitIndexExpr(VCalcParser::IndexExprContext *ctx) {
     auto array = visit(ctx->atom());
-    auto index = visit(ctx->expr());
-    return std::make_shared<IndexNode>(std::move(array), std::move(index));
+    std::shared_ptr<ExprNode> index = nullptr;
+    if (ctx->expr()) {
+        index = std::any_cast<std::shared_ptr<ExprNode>>(visit(ctx->expr()));
+    }
+    return std::make_shared<IndexNode>(
+        std::any_cast<std::shared_ptr<ExprNode>>(array),
+        index
+    );
 }
 
 std::any ASTBuilder::visitGenerator(VCalcParser::GeneratorContext *ctx) {
