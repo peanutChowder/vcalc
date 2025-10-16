@@ -2,6 +2,7 @@
 #include "AST.h"
 #include "antlr4-runtime.h"
 #include <memory>
+#include <stdexcept>
 
 using namespace vcalc;
 using namespace antlr4;
@@ -174,8 +175,19 @@ std::any ASTBuilder::visitFilter(VCalcParser::FilterContext *ctx) {
 
 std::any ASTBuilder::visitAtom(VCalcParser::AtomContext *ctx) {
     if (ctx->INT()) {
-        int value = std::stoi(ctx->INT()->getText());
-        return std::make_shared<IntNode>(value);
+        const std::string literal = ctx->INT()->getText();
+        try {
+            size_t parsedChars = 0;
+            int value = std::stoi(literal, &parsedChars, 10);
+            if (parsedChars != literal.size()) {
+                throw std::runtime_error("TypeError: Integer literal '" + literal + "' is not a valid signed int.");
+            }
+            return std::make_shared<IntNode>(value);
+        } catch (const std::invalid_argument&) {
+            throw std::runtime_error("TypeError: Integer literal '" + literal + "' is not a valid signed int.");
+        } catch (const std::out_of_range&) {
+            throw std::runtime_error("RangeError: Integer literal '" + literal + "' is out of range for signed int.");
+        }
     } else if (ctx->ID()) {
         std::string id = ctx->ID()->getText();
         return std::make_shared<IdNode>(id);
