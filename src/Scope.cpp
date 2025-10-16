@@ -1,10 +1,7 @@
 #include "Scope.h"
-#include "Types.h"
 
 #include <iostream>
 #include <stdexcept>
-
-namespace vcalc {
 
 Scope::Scope(Scope* parent) : parent_(parent) {}
 
@@ -60,6 +57,4 @@ std::string Scope::printScope() const {
     }
     result += ">>\n";
     return result;
-}
-
 } 
