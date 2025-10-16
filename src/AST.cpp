@@ -27,7 +27,7 @@ std::string IdNode::toString() const {
 void IdNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // BinaryOpNode
-BinaryOpNode::BinaryOpNode(std::unique_ptr<ExprNode> l, std::unique_ptr<ExprNode> r, const std::string& o)
+BinaryOpNode::BinaryOpNode(std::shared_ptr<ExprNode> l, std::shared_ptr<ExprNode> r, const std::string& o)
     : left(std::move(l)), right(std::move(r)), op(o) { type = ValueType::UNKNOWN; }
 std::string BinaryOpNode::toString() const {
     return left->toString() + " " + op + " " + right->toString();
@@ -35,7 +35,7 @@ std::string BinaryOpNode::toString() const {
 void BinaryOpNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // RangeNode
-RangeNode::RangeNode(std::unique_ptr<ExprNode> s, std::unique_ptr<ExprNode> e)
+RangeNode::RangeNode(std::shared_ptr<ExprNode> s, std::shared_ptr<ExprNode> e)
     : start(std::move(s)), end(std::move(e)) { type = ValueType::VECTOR; }
 std::string RangeNode::toString() const {
     return start->toString() + " .. " + end->toString();
@@ -43,7 +43,7 @@ std::string RangeNode::toString() const {
 void RangeNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // IndexNode
-IndexNode::IndexNode(std::unique_ptr<ExprNode> a, std::unique_ptr<ExprNode> i)
+IndexNode::IndexNode(std::shared_ptr<ExprNode> a, std::shared_ptr<ExprNode> i)
     : array(std::move(a)), index(std::move(i)) { type = ValueType::UNKNOWN; }
 std::string IndexNode::toString() const {
     return array->toString() + "[" + index->toString() + "]";
@@ -51,7 +51,7 @@ std::string IndexNode::toString() const {
 void IndexNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // GeneratorNode
-GeneratorNode::GeneratorNode(const std::string& i, std::unique_ptr<ExprNode> d, std::unique_ptr<ExprNode> b)
+GeneratorNode::GeneratorNode(const std::string& i, std::shared_ptr<ExprNode> d, std::shared_ptr<ExprNode> b)
     : id(i), domain(std::move(d)), body(std::move(b)) { type = ValueType::VECTOR; }
 std::string GeneratorNode::toString() const {
     return "[ " + id + " in " + domain->toString() + " | " + body->toString() + " ]";
@@ -59,7 +59,7 @@ std::string GeneratorNode::toString() const {
 void GeneratorNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // FilterNode
-FilterNode::FilterNode(const std::string& i, std::unique_ptr<ExprNode> d, std::unique_ptr<ExprNode> p)
+FilterNode::FilterNode(const std::string& i, std::shared_ptr<ExprNode> d, std::shared_ptr<ExprNode> p)
     : id(i), domain(std::move(d)), predicate(std::move(p)) { type = ValueType::VECTOR; }
 std::string FilterNode::toString() const {
     return "[ " + id + " in " + domain->toString() + " & " + predicate->toString() + " ]";
@@ -67,7 +67,7 @@ std::string FilterNode::toString() const {
 void FilterNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // IntDecNode
-IntDecNode::IntDecNode(const std::string& i, std::unique_ptr<ExprNode> v)
+IntDecNode::IntDecNode(const std::string& i, std::shared_ptr<ExprNode> v)
     : id(i), value(std::move(v)) { type = ValueType::INTEGER; }
 std::string IntDecNode::toString() const {
     return "int " + id + " = " + value->toString();
@@ -75,7 +75,7 @@ std::string IntDecNode::toString() const {
 void IntDecNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // VectorDecNode
-VectorDecNode::VectorDecNode(const std::string& i, std::unique_ptr<ExprNode> v)
+VectorDecNode::VectorDecNode(const std::string& i, std::shared_ptr<ExprNode> v)
     : id(i), vectorValue(std::move(v)) { type = ValueType::VECTOR; }
 std::string VectorDecNode::toString() const {
     return "vector " + id + " = " + vectorValue->toString();
@@ -83,7 +83,7 @@ std::string VectorDecNode::toString() const {
 void VectorDecNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // AssignNode
-AssignNode::AssignNode(const std::string& i, std::unique_ptr<ExprNode> v)
+AssignNode::AssignNode(const std::string& i, std::shared_ptr<ExprNode> v)
     : id(i), value(std::move(v)) { type = ValueType::UNKNOWN; }
 std::string AssignNode::toString() const {
     return id + " = " + value->toString();
@@ -91,7 +91,7 @@ std::string AssignNode::toString() const {
 void AssignNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // PrintNode
-PrintNode::PrintNode(std::unique_ptr<ExprNode> e)
+PrintNode::PrintNode(std::shared_ptr<ExprNode> e)
     : printExpr(std::move(e)) { type = ValueType::UNKNOWN; }
 std::string PrintNode::toString() const {
     return "print(" + printExpr->toString() + ")";
@@ -99,7 +99,7 @@ std::string PrintNode::toString() const {
 void PrintNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // CondNode
-CondNode::CondNode(std::unique_ptr<ExprNode> cond, std::vector<std::unique_ptr<ASTNode>> stmts)
+CondNode::CondNode(std::shared_ptr<ExprNode> cond, std::vector<std::shared_ptr<ASTNode>> stmts)
     : ifCond(std::move(cond)), body(std::move(stmts)) { type = ValueType::UNKNOWN; }
 std::string CondNode::toString() const {
     std::string result = "if (" + ifCond->toString() + ")\n";
@@ -112,7 +112,7 @@ std::string CondNode::toString() const {
 void CondNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // LoopNode
-LoopNode::LoopNode(std::unique_ptr<ExprNode> cond, std::vector<std::unique_ptr<ASTNode>> stmts)
+LoopNode::LoopNode(std::shared_ptr<ExprNode> cond, std::vector<std::shared_ptr<ASTNode>> stmts)
     : loopCond(std::move(cond)), body(std::move(stmts)) { type = ValueType::UNKNOWN; }
 std::string LoopNode::toString() const {
     std::string result = "loop (" + loopCond->toString() + ")\n";
@@ -125,7 +125,7 @@ std::string LoopNode::toString() const {
 void LoopNode::accept(ASTVisitor& visitor) { visitor.visit(this); }
 
 // FileNode
-FileNode::FileNode(std::vector<std::unique_ptr<ASTNode>> stmts)
+FileNode::FileNode(std::vector<std::shared_ptr<ASTNode>> stmts)
     : statements(std::move(stmts)) { type = ValueType::UNKNOWN; }
 std::string FileNode::toString() const {
     std::string result;
