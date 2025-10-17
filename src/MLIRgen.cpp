@@ -116,13 +116,13 @@ void MLIRGen::visit(BinaryOpNode* node){
     if(node->left->type == ValueType::INTEGER && node->right->type == ValueType::INTEGER){
             // left and right are Integers
         if(node->op == "+"){
-            value = builder.create<mlir::arith::AddIOp>(backend.getLoc(), left, right);
+            value = builder->create<mlir::arith::AddIOp>(backend.getLoc(), left, right);
         }else if(node->op == "-"){
-            value = builder.create<mlir::arith::SubIOp>(backend.getLoc(), left, right);
+            value = builder->create<mlir::arith::SubIOp>(backend.getLoc(), left, right);
         }else if(node->op == "*"){
-            value = builder.create<mlir::arith::MulIOp>(backend.getLoc(), left, right);
+            value = builder->create<mlir::arith::MulIOp>(backend.getLoc(), left, right);
         }else if(node->op == "/"){
-            value = builder.create<mlir::arith::DivSIOp>(backend.getLoc(), left, right);
+            value = builder->create<mlir::arith::DivSIOp>(backend.getLoc(), left, right);
         }else{
             std::cout << "unsupported operator" << std::endl;
             return;
