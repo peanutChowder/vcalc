@@ -1,0 +1,5 @@
+//CHECK_FILE:test7.out
+
+vector v = 10..14;
+print(v[2]);
+print(v[10]); // out of bounds should print 0

@@ -1,0 +1,9 @@
+//CHECK_FILE:test9.out
+
+int i = 0;
+vector v = 1..5;
+
+loop (i < 5)
+    print(v[i]);
+    i = i + 1;
+pool;

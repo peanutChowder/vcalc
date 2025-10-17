@@ -1,0 +1,12 @@
+//CHECK_FILE:test8.out
+
+int x = 4;
+int y = 7;
+
+if (x < y)
+    print(1);
+    x = x + 3;
+    if (x == y)
+        print(2);
+    fi;
+fi;
