@@ -504,6 +504,8 @@ void MLIRGen::visit(CondNode* node) {
     builder_.create<mlir::scf::YieldOp>(loc_);
     builder_.setInsertionPointToStart(&ifOp.getElseRegion().front());
     builder_.create<mlir::scf::YieldOp>(loc_);
+    // Place subsequent statements after the completed if-op
+    builder_.setInsertionPointAfter(ifOp);
 
 }
 
