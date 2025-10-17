@@ -354,11 +354,47 @@ void MLIRGen::visit(IndexNode *node) {
         auto safeElem = builder_.create<mlir::arith::SelectOp>(loc_, inBounds, element, zeroVal);
 
         pushValue(safeElem);
-    } else {
-        // vector indexing not yet implemented.
-    }
 
+        } else if (indexVal.getType().isa<mlir::MemRefType>()) { // using a vector as index
+            auto indexVec = indexVal;
 
+            auto vecSize = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
+            auto indexSize = builder_.create<mlir::memref::DimOp>(loc_, indexVec, 0);
+
+            // Create resulting vector
+            auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+            auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, indexSize);
+
+            auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+            auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+
+            // For loop: iterate through all indices in indexVec
+            auto forOp = builder_.create<mlir::scf::ForOp>(
+                loc_, zeroIdx, indexSize, step,
+                [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::Value iv) {
+                    mlir::Value currIdx = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, indexVec, iv);
+                    // cast
+                    if (!currIdx.getType().isa<mlir::IndexType>()) {
+                        currIdx = nestedBuilder.create<mlir::arith::IndexCastOp>(nestedLoc, nestedBuilder.getIndexType(), currIdx);
+                    }
+
+                    // Within index?
+                    auto isGE = nestedBuilder.create<mlir::arith::CmpIOp>(
+                        nestedLoc, mlir::arith::CmpIPredicate::sge, currIdx, zeroIdx);
+                    auto isLT = nestedBuilder.create<mlir::arith::CmpIOp>(
+                        nestedLoc, mlir::arith::CmpIPredicate::slt, currIdx, vecSize);
+                    auto inBounds = nestedBuilder.create<mlir::arith::AndIOp>(nestedLoc, isGE, isLT);
+
+                    auto element = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, vecVal, currIdx);
+                    auto zeroVal = nestedBuilder.create<mlir::arith::ConstantIntOp>(nestedLoc, 0, nestedBuilder.getI32Type());
+                    auto safeElem = nestedBuilder.create<mlir::arith::SelectOp>(nestedLoc, inBounds, element, zeroVal);
+
+                    nestedBuilder.create<mlir::memref::StoreOp>(nestedLoc, safeElem, resultVec, iv);
+                }
+            );
+
+            pushValue(resultVec);
+        }
 }
 
 void MLIRGen::visit(CondNode* node) {
