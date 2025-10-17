@@ -319,27 +319,50 @@ void MLIRGen::visit(CondNode* node) {
 
 void MLIRGen::visit(LoopNode *node) {
     node->loopCond->accept(*this);
-    const mlir::Value initVal = popValue();
-    
+    mlir::Value initCondVal = popValue();
+
     builder_.create<mlir::scf::WhileOp>(
         loc_,
-        mlir::TypeRange(builder_.getI32Type()),
-        mlir::ValueRange(initVal),
-        [&](mlir::OpBuilder &condBuilder, mlir::Location condLoc, mlir::ValueRange args) { 
-            auto zero = condBuilder.create<mlir::arith::ConstantIntOp>(condLoc, 0, condBuilder.getI32Type());
-            auto cmpResult = condBuilder.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, args[0], zero);
-
-            condBuilder.create<mlir::scf::ConditionOp>(condLoc, cmpResult, args[0]);
-        },
-        [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::ValueRange args) {
+        mlir::TypeRange(builder_.getI32Type()),      
+        mlir::ValueRange(initCondVal),                
+        [&](mlir::OpBuilder &condBuilder, mlir::Location condLoc, mlir::ValueRange args) {
             auto prevBuilder = builder_;
-            builder_ = nestedBuilder;
+            builder_ = condBuilder;
 
+            mlir::Value currVal = args[0];
+
+            // Re-evaluate condition expression
+            node->loopCond->accept(*this);
+            mlir::Value condIntVal = popValue();
+
+            // get truthyness 
+            auto zero = condBuilder.create<mlir::arith::ConstantIntOp>(condLoc, 0, condBuilder.getI32Type());
+            auto cmpResult = condBuilder.create<mlir::arith::CmpIOp>(
+                condLoc, mlir::arith::CmpIPredicate::ne, condIntVal, zero
+            );
+
+            // Feed carried variable forward
+            condBuilder.create<mlir::scf::ConditionOp>(condLoc, cmpResult, args);
+
+            builder_ = prevBuilder;
+        },
+        [&](mlir::OpBuilder &bodyBuilder, mlir::Location bodyLoc, mlir::ValueRange args) {
+            // Enter body region
+            auto prevBuilder = builder_;
+            builder_ = bodyBuilder;
+
+            // Visit loop body statements
             for (const auto &stmt : node->body) {
                 if (stmt) stmt->accept(*this);
             }
 
-            nestedBuilder.create<mlir::scf::YieldOp>(loc_);
+            // At end of body, recompute the condition value for next iteration
+            node->loopCond->accept(*this);
+            mlir::Value nextCondVal = popValue();
+
+            // Yield the condition value forward
+            bodyBuilder.create<mlir::scf::YieldOp>(bodyLoc, nextCondVal);
+
             builder_ = prevBuilder;
         }
     );
