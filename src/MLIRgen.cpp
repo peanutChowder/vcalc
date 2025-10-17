@@ -122,6 +122,7 @@ void MLIRGen::visit(BinaryOpNode* node) {
     }
     mlir::Value vec, other;
     bool bothVec;
+    // if both are not vectors, other is always scalar
     if(!left_isVec && right_isVec){
         // right is the vector
         vec = right;
@@ -136,19 +137,65 @@ void MLIRGen::visit(BinaryOpNode* node) {
         other = left;
         bothVec = true;
     }
-    auto size = builder_.create<mlir::memref::DimOp>(loc_, vec, 0);
-    auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-    auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
+   
+    mlir::Value result;
+    if(!bothVec){ //
+        auto size = builder_.create<mlir::memref::DimOp>(loc_, vec, 0);
+        auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+        auto resultVec;
 
-    auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
-    auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step);
-    builder_.setInsertionPointToStart(forOp.getBody());
-    auto iv = forOp.getInductionVar();
+        auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+        auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step);
+        builder_.setInsertionPointToStart(forOp.getBody());
+        auto iv = forOp.getInductionVar();
 
-    /*
-    need to check for same size
-    perform operations
+        resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
+        auto a = builder.create<mlir::memref::LoadOp>(loc_,vec, iv);
+        mlir::Value b = builder.create<mlir::memref::LoadOp>(loc_,other, iv);
+        if(node->op == "+" || node->op == "-" || node->op == "*"|| node->op == "/"){
+            result = arithOp(a, b);
+            // store in result vec
+        }else{
+            result = cmpOp(a, b);
+        }
+            builder.create<mlir::memref::StoreOp(loc_, resultVec, result, iv);
+    }else{ // add padding to vectors
+        auto sizea = builder_.create<mlir::memref::DimOp>(loc_, vec, 0)
+        auto sizeb = builder_.create<mlir::memref::DimOp>(loc_, other, 0);
+        // compare sizes
+        auto cmp = builder_.create<mlir::aith::CmpOp>(loc_, mlir::arith::CmpIPredicate::sgt, sizea, sizeb);
+        auto maxSz = builder_.create<mlir::airth::SelectOp(loc, cmp, sizea, sizeb);
+
+        auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, maxSz);
+        
+        // need to determine which indices are valid
+        auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+        auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, maxSize);
+
+        auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+        auto zeroI32 = builder_.create<mlir::arith::ConstantOp>(loc_, builder_.getI32Type(), builder_.getI32IntegerAttr(0));
+
+        auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, maxSize, step);
+        builder_.setInsertionPointToStart(forOp.getBody());
+        auto iv = forOp.getInductionVar();
+
+        // a_inBound if iv < sizeA
+        auto a_inBound = builder_.create<mlir::arith:CmpIOp>(loc_,mlir::arith::CmpIPredicate::slt, iv, sizea);
+        // get value for vector a at current index
+        auto a_value = builder_.create<mlir::scf::IfOp>(loc_, a_inBound, true);
+        builder_.setInsertionPointToStart(&a_value.getThenRegion().front());
+        auto elem = builder_.create<mlir::memref::LoadOp>(loc_,left,iv);
+        
+
+        
+
+
+    }
+    mlir::Value b = bothVec? builder.create<mlir::memref::LoadOP>(loc_, other, iv): other;
+    // if b is a vector determine size of both vectors
+    
     
     
     */
