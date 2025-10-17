@@ -1,4 +1,6 @@
-#include <assert.h>
+﻿#include <assert.h>
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include "BackEnd.h"
 // Code generator and lowering class that takes high-level IR and lowers it to
@@ -10,6 +12,7 @@ BackEnd::BackEnd() : loc(mlir::UnknownLoc::get(&context)) {
     context.loadDialect<mlir::scf::SCFDialect>();
     context.loadDialect<mlir::cf::ControlFlowDialect>();
     context.loadDialect<mlir::memref::MemRefDialect>(); 
+    context.loadDialect<mlir::func::FuncDialect>();
 
     // Initialize the MLIR context 
     builder = std::make_shared<mlir::OpBuilder>(&context);
@@ -20,41 +23,16 @@ BackEnd::BackEnd() : loc(mlir::UnknownLoc::get(&context)) {
     setupPrintf();
     createGlobalString("%c\0", "charFormat");
     createGlobalString("%d\0", "intFormat");
+    createGlobalString("\n\0", "newline");
 }
 // Generate main function in MLIR.
 int BackEnd::emitModule() {
-
-    // Create a main function 
-    mlir::Type intType = mlir::IntegerType::get(&context, 32);
-    auto mainType = mlir::LLVM::LLVMFunctionType::get(intType, {}, false);
-    mlir::LLVM::LLVMFuncOp mainFunc = builder->create<mlir::LLVM::LLVMFuncOp>(loc, "main", mainType);
+    // Create a minimal func dialect main entry point. MLIRGen will populate the body.
+    auto intType = mlir::IntegerType::get(&context, 32);
+    auto funcType = mlir::FunctionType::get(&context, /*inputs=*/llvm::ArrayRef<mlir::Type>{}, /*results=*/mlir::ArrayRef<mlir::Type>{mlir::IntegerType::get(&context, 32)});
+    mlir::func::FuncOp mainFunc = builder->create<mlir::func::FuncOp>(loc, "main", funcType);
     mlir::Block *entry = mainFunc.addEntryBlock();
     builder->setInsertionPointToStart(entry);
-
-    // Get the integer format string we already created.   
-    mlir::LLVM::GlobalOp formatString;
-    if (!(formatString = module.lookupSymbol<mlir::LLVM::GlobalOp>("intFormat"))) {
-        llvm::errs() << "missing format string!\n";
-        return 1;
-    }
-
-    // Get the format string and print 415
-    mlir::Value formatStringPtr = builder->create<mlir::LLVM::AddressOfOp>(loc, formatString); 
-    mlir::Value intToPrint = builder->create<mlir::LLVM::ConstantOp>(loc, intType, 415); 
-    mlir::ValueRange args = {formatStringPtr, intToPrint}; 
-    mlir::LLVM::LLVMFuncOp printfFunc = module.lookupSymbol<mlir::LLVM::LLVMFuncOp>("printf"); 
-    builder->create<mlir::LLVM::CallOp>(loc, printfFunc, args);
-
-    // Return 0
-    mlir::Value zero = builder->create<mlir::LLVM::ConstantOp>(loc, intType, builder->getIntegerAttr(intType, 0));
-    builder->create<mlir::LLVM::ReturnOp>(builder->getUnknownLoc(), zero);    
-    
-    module.dump();
-
-    if (mlir::failed(mlir::verify(module))) {
-        module.emitError("module failed to verify");
-        return 1;
-    }
     return 0;
 }
 // Use passes to lower high-level dialects (Arith, MemRef, etc.).
@@ -64,6 +42,9 @@ int BackEnd::lowerDialects() {
 
     // Lower SCF to CF (ControlFlow)
     pm.addPass(mlir::createConvertSCFToCFPass());
+
+    // Lower Func to LLVM (for printi/printc wrappers and calls)
+    pm.addPass(mlir::createConvertFuncToLLVMPass());
 
     // Lower Arith to LLVM
     pm.addPass(mlir::createArithToLLVMConversionPass());
@@ -97,9 +78,14 @@ void BackEnd::dumpLLVM(std::ostream &os) {
     output << *llvm_module;
 }
 
+void BackEnd::finalizeWithReturnZero() {
+    auto zero = builder->create<mlir::arith::ConstantIntOp>(loc, 0, builder->getI32Type());
+    builder->create<mlir::func::ReturnOp>(builder->getUnknownLoc(), mlir::ValueRange{zero});
+}
+
 void BackEnd::setupPrintf() {
     // Create a function declaration for printf, the signature is:
-    //   * `i32 (ptr, ...)`
+    //   i32 (i8*, ...)
     mlir::Type intType = mlir::IntegerType::get(&context, 32);
     auto ptrTy = mlir::LLVM::LLVMPointerType::get(&context);
     auto llvmFnType = mlir::LLVM::LLVMFunctionType::get(intType, ptrTy,

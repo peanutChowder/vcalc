@@ -9,6 +9,7 @@
 #include "BackEnd.h"
 #include "ASTBuilder.h"
 #include "AST.h"
+#include "MLIRgen.h"
 
 #include <iostream>
 #include <fstream>
@@ -42,7 +43,25 @@ int main(int argc, char **argv) {
 
   std::ofstream os(argv[2]);
   BackEnd backend;
-  backend.emitModule();
+  // Create entry function (no return yet); let MLIRGen populate body
+  if (backend.emitModule() != 0) {
+    std::cerr << "Compiler error: failed to set up module" << std::endl;
+    return 1;
+  }
+
+  // Generate MLIR from AST
+  MLIRGen gen(backend);
+  try {
+    gen.visit(ast.get());
+  } catch (const std::exception &e) {
+    std::cerr << "Compiler error during MLIR generation: " << e.what() << std::endl;
+    return 1;
+  }
+
+  // Finish main with return 0
+  backend.finalizeWithReturnZero();
+
+  // Lower and emit LLVM IR
   backend.lowerDialects();
   backend.dumpLLVM(os);
 

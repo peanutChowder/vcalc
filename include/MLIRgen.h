@@ -46,4 +46,7 @@ private:
 
     // Symbol table for variable values
     std::unordered_map<std::string, mlir::Value> symbolTable_;
+
+    // Memory-backed variables (for cross-region visibility)
+    std::unordered_map<std::string, mlir::Value> varMem_; // memref<1xi32> for ints
 };

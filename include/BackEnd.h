@@ -1,4 +1,5 @@
-
+﻿#pragma once
+ 
 // Pass manager
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -6,7 +7,7 @@
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 
 // Translation
@@ -39,6 +40,9 @@ class BackEnd {
     int emitModule();
     int lowerDialects();
     void dumpLLVM(std::ostream &os);
+
+    // Append a 'return 0' to the current insertion point (int main()).
+    void finalizeWithReturnZero();
 
     mlir::Location getLoc() const {
       return loc;
