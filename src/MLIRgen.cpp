@@ -100,12 +100,85 @@ void MLIRGen::visit(PrintNode* node) {
         // Call printi(val)
         builder_.create<mlir::func::CallOp>(
             loc_,
-            "printi",                  // symbol name
-            mlir::TypeRange(),         // no return type
-            mlir::ValueRange{val}      // arguments
+            "printi",
+            mlir::TypeRange(),
+            mlir::ValueRange{val}
         );
-    } else {
 
+        // newline after scalar
+        auto printcFunc = module_.lookupSymbol<mlir::func::FuncOp>("printc");
+        if (!printcFunc) {
+            auto charFuncType = mlir::FunctionType::get(
+                builder_.getContext(),
+                {builder_.getI8Type()},
+                {}
+            );
+            printcFunc = mlir::func::FuncOp::create(loc_, "printc", charFuncType);
+            module_.push_back(printcFunc);
+        }
+
+        auto newlineChar = builder_.create<mlir::arith::ConstantIntOp>(loc_, '\n', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{newlineChar});
+    }
+
+    
+    else if (val.getType().isa<mlir::MemRefType>()) { // Vector print
+        auto vecVal = val;
+        auto vecSize = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
+
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        auto stepIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+
+        // Create helper function types
+        auto printiFunc = module_.lookupSymbol<mlir::func::FuncOp>("printi");
+        if (!printiFunc) {
+            auto funcType = mlir::FunctionType::get(&context_, {builder_.getI32Type()}, {});
+            printiFunc = mlir::func::FuncOp::create(loc_, "printi", funcType);
+            module_.push_back(printiFunc);
+        }
+
+        auto printcFunc = module_.lookupSymbol<mlir::func::FuncOp>("printc");
+        if (!printcFunc) {
+            auto charFuncType = mlir::FunctionType::get(&context_, {builder_.getI8Type()}, {});
+            printcFunc = mlir::func::FuncOp::create(loc_, "printc", charFuncType);
+            module_.push_back(printcFunc);
+        }
+
+        // Print '['
+        auto openBracket = builder_.create<mlir::arith::ConstantIntOp>(loc_, '[', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{openBracket});
+
+        // Loop over elements
+        builder_.create<mlir::scf::ForOp>(
+            loc_, zeroIdx, vecSize, stepIdx,
+            [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::Value iv) {
+                mlir::Value elem = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, vecVal, iv);
+                nestedBuilder.create<mlir::func::CallOp>(
+                    nestedLoc, "printi", mlir::TypeRange(), mlir::ValueRange{elem});
+
+                // If not last element: print space
+                mlir::Value lastIdx = nestedBuilder.create<mlir::arith::SubIOp>(nestedLoc, vecSize, stepIdx);
+                mlir::Value isNotLast = nestedBuilder.create<mlir::arith::CmpIOp>(
+                    nestedLoc, mlir::arith::CmpIPredicate::ne, iv, lastIdx);
+
+                auto spaceChar = nestedBuilder.create<mlir::arith::ConstantIntOp>(
+                    nestedLoc, ' ', nestedBuilder.getI8Type());
+                nestedBuilder.create<mlir::scf::IfOp>(
+                    nestedLoc, isNotLast,
+                    [&](mlir::OpBuilder &ifBuilder, mlir::Location ifLoc) {
+                        ifBuilder.create<mlir::func::CallOp>(
+                            ifLoc, "printc", mlir::TypeRange(), mlir::ValueRange{spaceChar});
+                        ifBuilder.create<mlir::scf::YieldOp>(ifLoc);
+                    },
+                    nullptr);
+            });
+
+        //  closing bracket and newline
+        auto closeBracket = builder_.create<mlir::arith::ConstantIntOp>(loc_, ']', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{closeBracket});
+
+        auto newlineChar = builder_.create<mlir::arith::ConstantIntOp>(loc_, '\n', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{newlineChar});
     }
 }
 
