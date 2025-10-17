@@ -1,6 +1,10 @@
 #include <stdio.h>
 
-// Add function named dummyPrint with signature void(int) to llvm to have this linked in.
-void dummyPrint(int i) {
-  printf("I'm a function! %d\n", i);
+// Simple runtime printing functions expected by the generated code
+void printi(int i) {
+  printf("%d", i);
+}
+
+void printc(char c) {
+  putchar(c);
 }

@@ -1,0 +1,7 @@
+//CHECK_FILE:test6.out
+
+vector v = [i in 1..6 | i * 2];
+print(v);
+
+vector f = [i in v & i > 6];
+print(f);

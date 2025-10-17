@@ -1,0 +1,5 @@
+//CHECK_FILE:test5.out
+
+vector v = 1..5;
+print(v);
+print(1..3);

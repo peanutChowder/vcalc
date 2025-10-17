@@ -53,17 +53,31 @@ void MLIRGen::visit(IntNode* node) {
 }
 
 void MLIRGen::visit(IdNode* node) {
-    auto it = symbolTable_.find(node->name);
-    if (it == symbolTable_.end()) {
-        throw std::runtime_error("MLIRGen error: identifier '" + node->name + "' used before assignment.");
+    // If variable is memory-backed, load it
+    if (auto mit = varMem_.find(node->name); mit != varMem_.end()) {
+        auto mem = mit->second;
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        auto val = builder_.create<mlir::memref::LoadOp>(loc_, mem, mlir::ValueRange{zeroIdx});
+        pushValue(val);
+        return;
     }
-    pushValue(it->second);
+    // Fallback to SSA-backed variable
+    if (auto it = symbolTable_.find(node->name); it != symbolTable_.end()) {
+        pushValue(it->second);
+        return;
+    }
+    throw std::runtime_error("MLIRGen error: identifier '" + node->name + "' used before assignment.");
 }
 
 void MLIRGen::visit(IntDecNode* node) {
     node->value->accept(*this);
     mlir::Value value = popValue();
-    symbolTable_[node->id->name] = value;
+    // allocate memref<1xi32> and store
+    auto memTy = mlir::MemRefType::get({1}, builder_.getI32Type());
+    auto mem = builder_.create<mlir::memref::AllocOp>(loc_, memTy);
+    auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+    builder_.create<mlir::memref::StoreOp>(loc_, value, mem, mlir::ValueRange{zeroIdx});
+    varMem_[node->id->name] = mem;
 }
 
 void MLIRGen::visit(VectorDecNode* node) {
@@ -75,86 +89,69 @@ void MLIRGen::visit(VectorDecNode* node) {
 void MLIRGen::visit(AssignNode* node) {
     node->value->accept(*this);
     mlir::Value value = popValue();
-    symbolTable_[node->id->name] = value;
+    auto name = node->id->name;
+    if (auto mit = varMem_.find(name); mit != varMem_.end()) {
+        auto mem = mit->second;
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        builder_.create<mlir::memref::StoreOp>(loc_, value, mem, mlir::ValueRange{zeroIdx});
+    } else {
+        // create storage if not exists (implicit declaration)
+        auto memTy = mlir::MemRefType::get({1}, builder_.getI32Type());
+        auto mem = builder_.create<mlir::memref::AllocOp>(loc_, memTy);
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        builder_.create<mlir::memref::StoreOp>(loc_, value, mem, mlir::ValueRange{zeroIdx});
+        varMem_[name] = mem;
+    }
 }
 void MLIRGen::visit(PrintNode* node) {
     node->printExpr->accept(*this);
     mlir::Value val = popValue();
 
-    // Integer print
-    if (val.getType() == builder_.getI32Type()) {
-        // Define function type for printi(i32)
-        auto funcType = mlir::FunctionType::get(
-            builder_.getContext(),
-            {builder_.getI32Type()},
-            {}
-        );
-
-        // Look up or create the printi function symbol
-        auto printFunc = module_.lookupSymbol<mlir::func::FuncOp>("printi");
-        if (!printFunc) {
-            printFunc = mlir::func::FuncOp::create(loc_, "printi", funcType);
-            module_.push_back(printFunc);
-        }
-
-        // Call printi(val)
-        builder_.create<mlir::func::CallOp>(
-            loc_,
-            "printi",
-            mlir::TypeRange(),
-            mlir::ValueRange{val}
-        );
-
-        // newline after scalar
-        auto printcFunc = module_.lookupSymbol<mlir::func::FuncOp>("printc");
-        if (!printcFunc) {
-            auto charFuncType = mlir::FunctionType::get(
-                builder_.getContext(),
-                {builder_.getI8Type()},
-                {}
-            );
-            printcFunc = mlir::func::FuncOp::create(loc_, "printc", charFuncType);
-            module_.push_back(printcFunc);
-        }
-
-        auto newlineChar = builder_.create<mlir::arith::ConstantIntOp>(loc_, '\n', builder_.getI8Type());
-        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{newlineChar});
+    // Use LLVM printf via BackEnd globals (intFormat/charFormat/newline)
+    auto printfFunc = module_.lookupSymbol<mlir::LLVM::LLVMFuncOp>("printf");
+    auto intFormat = module_.lookupSymbol<mlir::LLVM::GlobalOp>("intFormat");
+    auto charFormat = module_.lookupSymbol<mlir::LLVM::GlobalOp>("charFormat");
+    auto newlineStr = module_.lookupSymbol<mlir::LLVM::GlobalOp>("newline");
+    if (!printfFunc || !intFormat || !charFormat || !newlineStr) {
+        throw std::runtime_error("MLIRGen error: missing printf or format globals in module");
     }
 
-    
-    else if (val.getType().isa<mlir::MemRefType>()) { // Vector print
+    auto callPrintfFmtOnly = [&](mlir::LLVM::GlobalOp global) {
+        auto fmtPtr = builder_.create<mlir::LLVM::AddressOfOp>(loc_, global);
+        builder_.create<mlir::LLVM::CallOp>(loc_, printfFunc, mlir::ValueRange{fmtPtr});
+    };
+
+    auto callPrintfInt = [&](mlir::Value i32Val) {
+        auto fmtPtr = builder_.create<mlir::LLVM::AddressOfOp>(loc_, intFormat);
+        builder_.create<mlir::LLVM::CallOp>(loc_, printfFunc, mlir::ValueRange{fmtPtr, i32Val});
+    };
+    auto callPrintfChar = [&](int ch) {
+        auto fmtPtr = builder_.create<mlir::LLVM::AddressOfOp>(loc_, charFormat);
+        auto cVal = builder_.create<mlir::arith::ConstantIntOp>(loc_, ch, builder_.getI32Type());
+        builder_.create<mlir::LLVM::CallOp>(loc_, printfFunc, mlir::ValueRange{fmtPtr, cVal});
+    };
+
+    if (val.getType() == builder_.getI32Type()) {
+        callPrintfInt(val);
+        callPrintfFmtOnly(newlineStr);
+    } else if (val.getType().isa<mlir::MemRefType>()) { // Vector print
         auto vecVal = val;
         auto vecSize = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
 
         auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
         auto stepIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
 
-        // Create helper function types
-        auto printiFunc = module_.lookupSymbol<mlir::func::FuncOp>("printi");
-        if (!printiFunc) {
-            auto funcType = mlir::FunctionType::get(&context_, {builder_.getI32Type()}, {});
-            printiFunc = mlir::func::FuncOp::create(loc_, "printi", funcType);
-            module_.push_back(printiFunc);
-        }
-
-        auto printcFunc = module_.lookupSymbol<mlir::func::FuncOp>("printc");
-        if (!printcFunc) {
-            auto charFuncType = mlir::FunctionType::get(&context_, {builder_.getI8Type()}, {});
-            printcFunc = mlir::func::FuncOp::create(loc_, "printc", charFuncType);
-            module_.push_back(printcFunc);
-        }
-
         // Print '['
-        auto openBracket = builder_.create<mlir::arith::ConstantIntOp>(loc_, '[', builder_.getI8Type());
-        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{openBracket});
+        callPrintfChar('[');
 
         // Loop over elements
         builder_.create<mlir::scf::ForOp>(
             loc_, zeroIdx, vecSize, stepIdx, mlir::ValueRange(),
             [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange) {
                 mlir::Value elem = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, vecVal, iv);
-                nestedBuilder.create<mlir::func::CallOp>(
-                    nestedLoc, "printi", mlir::TypeRange(), mlir::ValueRange{elem});
+                // print element
+                auto fmtPtr = nestedBuilder.create<mlir::LLVM::AddressOfOp>(nestedLoc, intFormat);
+                nestedBuilder.create<mlir::LLVM::CallOp>(nestedLoc, printfFunc, mlir::ValueRange{fmtPtr, elem});
 
                 // If not last element: print space
                 mlir::Value lastIdx = nestedBuilder.create<mlir::arith::SubIOp>(nestedLoc, vecSize, stepIdx);
@@ -162,23 +159,20 @@ void MLIRGen::visit(PrintNode* node) {
                     nestedLoc, mlir::arith::CmpIPredicate::ne, iv, lastIdx);
 
                 auto spaceChar = nestedBuilder.create<mlir::arith::ConstantIntOp>(
-                    nestedLoc, ' ', nestedBuilder.getI8Type());
+                    nestedLoc, ' ', nestedBuilder.getI32Type());
                 nestedBuilder.create<mlir::scf::IfOp>(
                     nestedLoc, isNotLast,
                     [&](mlir::OpBuilder &ifBuilder, mlir::Location ifLoc) {
-                        ifBuilder.create<mlir::func::CallOp>(
-                            ifLoc, "printc", mlir::TypeRange(), mlir::ValueRange{spaceChar});
+                        auto fmtC = ifBuilder.create<mlir::LLVM::AddressOfOp>(ifLoc, charFormat);
+                        ifBuilder.create<mlir::LLVM::CallOp>(ifLoc, printfFunc, mlir::ValueRange{fmtC, spaceChar});
                         ifBuilder.create<mlir::scf::YieldOp>(ifLoc);
                     },
                     nullptr);
             });
 
         //  closing bracket and newline
-        auto closeBracket = builder_.create<mlir::arith::ConstantIntOp>(loc_, ']', builder_.getI8Type());
-        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{closeBracket});
-
-        auto newlineChar = builder_.create<mlir::arith::ConstantIntOp>(loc_, '\n', builder_.getI8Type());
-        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{newlineChar});
+        callPrintfChar(']');
+        callPrintfFmtOnly(newlineStr);
     }
 }
 
@@ -373,11 +367,24 @@ void MLIRGen::visit(FilterNode* node){
     node->predicate->accept(*this);
     auto predResult = popValue();
 
-    // Convert integer predicate to boolean (nonzero = true)
-    auto zeroI32 = builder_.create<mlir::arith::ConstantOp>(loc_, builder_.getI32Type(), builder_.getI32IntegerAttr(0));
-    auto cond = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predResult, zeroI32);
+    // Convert predicate to i1
+    mlir::Value cond;
+    if (auto it = predResult.getType().dyn_cast<mlir::IntegerType>()) {
+        if (it.getWidth() == 1) {
+            cond = predResult;
+        } else {
+            auto zeroI = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, it);
+            cond = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predResult, zeroI);
+        }
+    } else if (predResult.getType().isa<mlir::IndexType>()) {
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        cond = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predResult, zeroIdx);
+    } else {
+        throw std::runtime_error("MLIRGen error: unsupported predicate type");
+    }
 
-    auto ifOp = builder_.create<mlir::scf::IfOp>(loc_, cond, false);
+    // scf.if must produce the carried index; create if with result type index
+    auto ifOp = builder_.create<mlir::scf::IfOp>(loc_, mlir::TypeRange{outIdx.getType()}, cond, /*withElseRegion=*/true);
     // If predicate is true, store domain value in result vector
     builder_.setInsertionPointToStart(&ifOp.getThenRegion().front());
     builder_.create<mlir::memref::StoreOp>(loc_, domainVal, result, outIdx);
@@ -511,77 +518,69 @@ void MLIRGen::visit(IndexNode *node) {
 
 void MLIRGen::visit(CondNode* node) {
     node->ifCond->accept(*this);
-    const mlir::Value intVal = popValue();
-    auto zero = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, builder_.getI32Type());
-    auto boolVal = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, intVal, zero);
+    mlir::Value condVal = popValue();
+    // Coerce to i1
+    mlir::Value boolVal;
+    if (auto it = condVal.getType().dyn_cast<mlir::IntegerType>()) {
+        if (it.getWidth() == 1) {
+            boolVal = condVal;
+        } else {
+            auto zero = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, it);
+            boolVal = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, condVal, zero);
+        }
+    } else if (condVal.getType().isa<mlir::IndexType>()) {
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        boolVal = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, condVal, zeroIdx);
+    } else {
+        throw std::runtime_error("MLIRGen error: unsupported condition type");
+    }
 
-    builder_.create<mlir::scf::IfOp>(
-        loc_,
-        boolVal,
-        [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc) {
-            auto prevBuilder = builder_;
-            builder_ = nestedBuilder;
-
-            for (const auto& stmt : node->body) {
-                if (stmt) {
-                    stmt->accept(*this);
-                }
-            }
-
-            builder_ = prevBuilder;
-        },
-        nullptr
-    );
+    auto ifOp = builder_.create<mlir::scf::IfOp>(loc_, boolVal, /*withElseRegion=*/true);
+    builder_.setInsertionPointToStart(&ifOp.getThenRegion().front());
+    for (const auto& stmt : node->body) {
+        if (stmt) stmt->accept(*this);
+    }
+    builder_.create<mlir::scf::YieldOp>(loc_);
+    builder_.setInsertionPointToStart(&ifOp.getElseRegion().front());
+    builder_.create<mlir::scf::YieldOp>(loc_);
+    // Place subsequent statements after the completed if-op
+    builder_.setInsertionPointAfter(ifOp);
 
 }
 
 void MLIRGen::visit(LoopNode *node) {
-    node->loopCond->accept(*this);
-    mlir::Value initCondVal = popValue();
+    // while (cond) { body }
+    auto toBool = [&](mlir::OpBuilder &bld, mlir::Location loc, mlir::Value v) -> mlir::Value {
+        if (auto it = v.getType().dyn_cast<mlir::IntegerType>()) {
+            if (it.getWidth() == 1) return v;
+            auto zero = bld.create<mlir::arith::ConstantIntOp>(loc, 0, it);
+            return bld.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ne, v, zero);
+        } else if (v.getType().isa<mlir::IndexType>()) {
+            auto zeroIdx = bld.create<mlir::arith::ConstantIndexOp>(loc, 0);
+            return bld.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ne, v, zeroIdx);
+        }
+        throw std::runtime_error("MLIRGen error: unsupported loop condition type");
+    };
 
     builder_.create<mlir::scf::WhileOp>(
-        loc_,
-        mlir::TypeRange(builder_.getI32Type()),      
-        mlir::ValueRange(initCondVal),                
-        [&](mlir::OpBuilder &condBuilder, mlir::Location condLoc, mlir::ValueRange args) {
-            auto prevBuilder = builder_;
+        loc_, mlir::TypeRange{}, mlir::ValueRange{},
+        [&](mlir::OpBuilder &condBuilder, mlir::Location condLoc, mlir::ValueRange) {
+            auto prev = builder_;
             builder_ = condBuilder;
-
-            mlir::Value currVal = args[0];
-
-            // Re-evaluate condition expression
             node->loopCond->accept(*this);
-            mlir::Value condIntVal = popValue();
-
-            // get truthyness 
-            auto zero = condBuilder.create<mlir::arith::ConstantIntOp>(condLoc, 0, condBuilder.getI32Type());
-            auto cmpResult = condBuilder.create<mlir::arith::CmpIOp>(
-                condLoc, mlir::arith::CmpIPredicate::ne, condIntVal, zero
-            );
-
-            // Feed carried variable forward
-            condBuilder.create<mlir::scf::ConditionOp>(condLoc, cmpResult, args);
-
-            builder_ = prevBuilder;
+            mlir::Value condVal = popValue();
+            mlir::Value boolVal = toBool(condBuilder, condLoc, condVal);
+            condBuilder.create<mlir::scf::ConditionOp>(condLoc, boolVal, mlir::ValueRange{});
+            builder_ = prev;
         },
-        [&](mlir::OpBuilder &bodyBuilder, mlir::Location bodyLoc, mlir::ValueRange args) {
-            // Enter body region
-            auto prevBuilder = builder_;
+        [&](mlir::OpBuilder &bodyBuilder, mlir::Location bodyLoc, mlir::ValueRange) {
+            auto prev = builder_;
             builder_ = bodyBuilder;
-
-            // Visit loop body statements
             for (const auto &stmt : node->body) {
                 if (stmt) stmt->accept(*this);
             }
-
-            // At end of body, recompute the condition value for next iteration
-            node->loopCond->accept(*this);
-            mlir::Value nextCondVal = popValue();
-
-            // Yield the condition value forward
-            bodyBuilder.create<mlir::scf::YieldOp>(bodyLoc, mlir::ValueRange{nextCondVal});
-
-            builder_ = prevBuilder;
+            bodyBuilder.create<mlir::scf::YieldOp>(bodyLoc);
+            builder_ = prev;
         }
     );
 }
