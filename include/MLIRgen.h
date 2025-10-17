@@ -1,16 +1,19 @@
 #pragma once
 
 #include "AST.h"
+#include "ASTVisitor.h"
 #include "BackEnd.h"
-#include <vector>
-#include <unordered_map>
+
 #include <string>
+#include <unordered_map>
+#include <vector>
+
 #include <mlir/IR/Value.h>
 
 // MLIRGen traverses the AST and emits MLIR operations
 class MLIRGen : public ASTVisitor {
 public:
-    explicit MLIRGen(BackEnd &backend);
+    explicit MLIRGen(BackEnd& backend);
 
     // AST node visit methods
     void visit(FileNode* node) override;
@@ -29,14 +32,18 @@ public:
     void visit(LoopNode* node) override;
 
 private:
-    BackEnd &backend;
-    mlir::OpBuilder &builder;
-    mlir::ModuleOp &module;
-    mlir::MLIRContext &context;
+    mlir::Value popValue();
+    void pushValue(mlir::Value value);
+
+    [[maybe_unused]] BackEnd& backend_;
+    mlir::OpBuilder& builder_;
+    mlir::ModuleOp module_;
+    mlir::MLIRContext& context_;
+    mlir::Location loc_;
 
     // Stack for intermediate MLIR values
     std::vector<mlir::Value> v_stack;
 
     // Symbol table for variable values
-    std::unordered_map<std::string, mlir::Value> symbolTable;
+    std::unordered_map<std::string, mlir::Value> symbolTable_;
 };
