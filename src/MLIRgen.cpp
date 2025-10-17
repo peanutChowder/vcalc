@@ -137,12 +137,30 @@ void MLIRGen::visit(PrintNode* node) {
 
 void MLIRGen::visit(CondNode* node) {
     node->ifCond->accept(*this);
-    popValue();
-    for (const auto& stmt : node->body) {
-        if (stmt) {
-            stmt->accept(*this);
-        }
-    }
+    const mlir::Value intVal = popValue();
+    auto zero = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, builder_.getI32Type());
+    auto boolVal = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, intVal, zero);
+
+    builder_.create<mlir::scf::IfOp>(
+        loc_,
+        boolVal,
+        [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc) {
+            auto prevBuilder = builder_;
+            builder_ = nestedBuilder;
+
+            for (const auto& stmt : node->body) {
+                if (stmt) {
+                    stmt->accept(*this);
+                }
+            }
+
+            builder_ = prevBuilder;
+        },
+        nullptr
+    );
+
+}
+
 }
 
 void MLIRGen::visit(LoopNode* node) {
