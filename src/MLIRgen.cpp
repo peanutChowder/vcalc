@@ -161,6 +161,33 @@ void MLIRGen::visit(CondNode* node) {
 
 }
 
+void MLIRGen::visit(LoopNode *node) {
+    node->loopCond->accept(*this);
+    const mlir::Value initVal = popValue();
+    
+    builder_.create<mlir::scf::WhileOp>(
+        loc_,
+        mlir::TypeRange(builder_.getI32Type()),
+        mlir::ValueRange(initVal),
+        [&](mlir::OpBuilder &condBuilder, mlir::Location condLoc, mlir::ValueRange args) { 
+            auto zero = condBuilder.create<mlir::arith::ConstantIntOp>(condLoc, 0, condBuilder.getI32Type());
+            auto cmpResult = condBuilder.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, args[0], zero);
+
+            condBuilder.create<mlir::scf::ConditionOp>(condLoc, cmpResult, args[0]);
+        },
+        [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::ValueRange args) {
+            auto prevBuilder = builder_;
+            builder_ = nestedBuilder;
+
+            for (const auto &stmt : node->body) {
+                if (stmt) stmt->accept(*this);
+            }
+
+            nestedBuilder.create<mlir::scf::YieldOp>(loc_);
+            builder_ = prevBuilder;
+        }
+    );
+
 }
 
 void MLIRGen::visit(LoopNode* node) {
