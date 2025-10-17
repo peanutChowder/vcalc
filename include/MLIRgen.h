@@ -42,7 +42,7 @@ private:
     mlir::Location loc_;
 
     // Stack for intermediate MLIR values
-    std::vector<mlir::Value> v_stack;
+    std::vector<mlir::Value> v_stack_;
 
     // Symbol table for variable values
     std::unordered_map<std::string, mlir::Value> symbolTable_;

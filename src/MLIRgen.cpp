@@ -9,6 +9,8 @@ After generating the MLIR, Backend will lower the dialects and output LLVM IR
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+
 
 #include <stdexcept>
 
@@ -20,11 +22,11 @@ MLIRGen::MLIRGen(BackEnd& backend)
       loc_(backend.getLoc()) {}
 
 mlir::Value MLIRGen::popValue() {
-    if (v_stack.empty()) {
+    if (v_stack_.empty()) {
         throw std::runtime_error("MLIRGen internal error: value stack underflow.");
     }
-    mlir::Value value = v_stack.back();
-    v_stack.pop_back();
+    mlir::Value value = v_stack_.back();
+    v_stack_.pop_back();
     return value;
 }
 
@@ -32,7 +34,7 @@ void MLIRGen::pushValue(mlir::Value value) {
     if (!value) {
         throw std::runtime_error("MLIRGen internal error: attempting to push empty value onto stack.");
     }
-    v_stack.push_back(value);
+    v_stack_.push_back(value);
 }
 
 void MLIRGen::visit(FileNode* node) {
@@ -75,11 +77,109 @@ void MLIRGen::visit(AssignNode* node) {
     mlir::Value value = popValue();
     symbolTable_[node->id->name] = value;
 }
-
 void MLIRGen::visit(PrintNode* node) {
     node->printExpr->accept(*this);
-    popValue();
-    // Printing support would lower to a printf call; not implemented yet.
+    mlir::Value val = popValue();
+
+    // Integer print
+    if (val.getType() == builder_.getI32Type()) {
+        // Define function type for printi(i32)
+        auto funcType = mlir::FunctionType::get(
+            builder_.getContext(),
+            {builder_.getI32Type()},
+            {}
+        );
+
+        // Look up or create the printi function symbol
+        auto printFunc = module_.lookupSymbol<mlir::func::FuncOp>("printi");
+        if (!printFunc) {
+            printFunc = mlir::func::FuncOp::create(loc_, "printi", funcType);
+            module_.push_back(printFunc);
+        }
+
+        // Call printi(val)
+        builder_.create<mlir::func::CallOp>(
+            loc_,
+            "printi",
+            mlir::TypeRange(),
+            mlir::ValueRange{val}
+        );
+
+        // newline after scalar
+        auto printcFunc = module_.lookupSymbol<mlir::func::FuncOp>("printc");
+        if (!printcFunc) {
+            auto charFuncType = mlir::FunctionType::get(
+                builder_.getContext(),
+                {builder_.getI8Type()},
+                {}
+            );
+            printcFunc = mlir::func::FuncOp::create(loc_, "printc", charFuncType);
+            module_.push_back(printcFunc);
+        }
+
+        auto newlineChar = builder_.create<mlir::arith::ConstantIntOp>(loc_, '\n', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{newlineChar});
+    }
+
+    
+    else if (val.getType().isa<mlir::MemRefType>()) { // Vector print
+        auto vecVal = val;
+        auto vecSize = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
+
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+        auto stepIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+
+        // Create helper function types
+        auto printiFunc = module_.lookupSymbol<mlir::func::FuncOp>("printi");
+        if (!printiFunc) {
+            auto funcType = mlir::FunctionType::get(&context_, {builder_.getI32Type()}, {});
+            printiFunc = mlir::func::FuncOp::create(loc_, "printi", funcType);
+            module_.push_back(printiFunc);
+        }
+
+        auto printcFunc = module_.lookupSymbol<mlir::func::FuncOp>("printc");
+        if (!printcFunc) {
+            auto charFuncType = mlir::FunctionType::get(&context_, {builder_.getI8Type()}, {});
+            printcFunc = mlir::func::FuncOp::create(loc_, "printc", charFuncType);
+            module_.push_back(printcFunc);
+        }
+
+        // Print '['
+        auto openBracket = builder_.create<mlir::arith::ConstantIntOp>(loc_, '[', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{openBracket});
+
+        // Loop over elements
+        builder_.create<mlir::scf::ForOp>(
+            loc_, zeroIdx, vecSize, stepIdx, mlir::ValueRange(),
+            [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange) {
+                mlir::Value elem = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, vecVal, iv);
+                nestedBuilder.create<mlir::func::CallOp>(
+                    nestedLoc, "printi", mlir::TypeRange(), mlir::ValueRange{elem});
+
+                // If not last element: print space
+                mlir::Value lastIdx = nestedBuilder.create<mlir::arith::SubIOp>(nestedLoc, vecSize, stepIdx);
+                mlir::Value isNotLast = nestedBuilder.create<mlir::arith::CmpIOp>(
+                    nestedLoc, mlir::arith::CmpIPredicate::ne, iv, lastIdx);
+
+                auto spaceChar = nestedBuilder.create<mlir::arith::ConstantIntOp>(
+                    nestedLoc, ' ', nestedBuilder.getI8Type());
+                nestedBuilder.create<mlir::scf::IfOp>(
+                    nestedLoc, isNotLast,
+                    [&](mlir::OpBuilder &ifBuilder, mlir::Location ifLoc) {
+                        ifBuilder.create<mlir::func::CallOp>(
+                            ifLoc, "printc", mlir::TypeRange(), mlir::ValueRange{spaceChar});
+                        ifBuilder.create<mlir::scf::YieldOp>(ifLoc);
+                    },
+                    nullptr);
+            });
+
+        //  closing bracket and newline
+        auto closeBracket = builder_.create<mlir::arith::ConstantIntOp>(loc_, ']', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{closeBracket});
+
+        auto newlineChar = builder_.create<mlir::arith::ConstantIntOp>(loc_, '\n', builder_.getI8Type());
+        builder_.create<mlir::func::CallOp>(loc_, "printc", mlir::TypeRange(), mlir::ValueRange{newlineChar});
+    }
 }
 
 //! Add support for different size vectors
@@ -93,9 +193,6 @@ void MLIRGen::visit(BinaryOpNode* node) {
     bool left_isVec = left.getType().isa<mlir::MemRefType>();
     bool right_isVec = right.getType().isa<mlir::MemRefType>();
 
-    mlir::Value result;
-
-      //lambdas for arithmetic and comparison
     auto arithOp = [&](mlir::Value a, mlir::Value b) -> mlir::Value {
         if (node->op == "+") return builder_.create<mlir::arith::AddIOp>(loc_, a, b);
         if (node->op == "-") return builder_.create<mlir::arith::SubIOp>(loc_, a, b);
@@ -110,39 +207,25 @@ void MLIRGen::visit(BinaryOpNode* node) {
         if (node->op == "!=") return builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, a, b);
         throw std::runtime_error("MLIRGen error: unsupported comparison operator '" + node->op + "'.");
     };
-    // if both are integers
-    if(!left_isVec && !right_isVec){
-        if(node->op == "+" || node->op == "-" || node->op == "*"|| node->op == "/"){
+
+    // Scalar case
+    if (!left_isVec && !right_isVec) {
+        mlir::Value result;
+        if (node->op == "+" || node->op == "-" || node->op == "*" || node->op == "/")
             result = arithOp(left, right);
-        }else{
+        else
             result = cmpOp(left, right);
-        }
         pushValue(result);
         return;
     }
-    mlir::Value vec, other;
-    bool bothVec;
-    // if both are not vectors, other is always scalar
-    if(!left_isVec && right_isVec){
-        // right is the vector
-        vec = right;
-        other = left; // left is scalar
-        bothVec = false;
-    }else if(!left_isVec && right_isVec){
-        vec = left;
-        other = right; // right is scalar
-        bothVec = false;
-    }else{
-        vec = right;
-        other = left;
-        bothVec = true;
-    }
-   
-    mlir::Value result;
-    if(!bothVec){ //
+
+    // Vector-scalar case
+    if (left_isVec != right_isVec) {
+        mlir::Value vec = left_isVec ? left : right;
+        mlir::Value scal = left_isVec ? right : left;
         auto size = builder_.create<mlir::memref::DimOp>(loc_, vec, 0);
         auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-        auto resultVec;
+        auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
 
         auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
         auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
@@ -150,55 +233,64 @@ void MLIRGen::visit(BinaryOpNode* node) {
         builder_.setInsertionPointToStart(forOp.getBody());
         auto iv = forOp.getInductionVar();
 
-        resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
-        auto a = builder.create<mlir::memref::LoadOp>(loc_,vec, iv);
-        mlir::Value b = builder.create<mlir::memref::LoadOp>(loc_,other, iv);
-        if(node->op == "+" || node->op == "-" || node->op == "*"|| node->op == "/"){
-            result = arithOp(a, b);
-            // store in result vec
-        }else{
-            result = cmpOp(a, b);
-        }
-            builder.create<mlir::memref::StoreOp(loc_, resultVec, result, iv);
-    }else{ // add padding to vectors
-        auto sizea = builder_.create<mlir::memref::DimOp>(loc_, vec, 0)
-        auto sizeb = builder_.create<mlir::memref::DimOp>(loc_, other, 0);
-        // compare sizes
-        auto cmp = builder_.create<mlir::aith::CmpOp>(loc_, mlir::arith::CmpIPredicate::sgt, sizea, sizeb);
-        auto maxSz = builder_.create<mlir::airth::SelectOp(loc, cmp, sizea, sizeb);
+        auto elem = builder_.create<mlir::memref::LoadOp>(loc_, vec, iv);
+        mlir::Value elemResult;
+        if (node->op == "+" || node->op == "-" || node->op == "*" || node->op == "/")
+            elemResult = arithOp(elem, scal);
+        else
+            elemResult = cmpOp(elem, scal);
+        builder_.create<mlir::memref::StoreOp>(loc_, elemResult, resultVec, iv);
 
-        auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, maxSz);
-        
-        // need to determine which indices are valid
-        auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-        auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, maxSize);
-
-        auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
-        auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-        auto zeroI32 = builder_.create<mlir::arith::ConstantOp>(loc_, builder_.getI32Type(), builder_.getI32IntegerAttr(0));
-
-        auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, maxSize, step);
-        builder_.setInsertionPointToStart(forOp.getBody());
-        auto iv = forOp.getInductionVar();
-
-        // a_inBound if iv < sizeA
-        auto a_inBound = builder_.create<mlir::arith:CmpIOp>(loc_,mlir::arith::CmpIPredicate::slt, iv, sizea);
-        // get value for vector a at current index
-        auto a_value = builder_.create<mlir::scf::IfOp>(loc_, a_inBound, true);
-        builder_.setInsertionPointToStart(&a_value.getThenRegion().front());
-        auto elem = builder_.create<mlir::memref::LoadOp>(loc_,left,iv);
-        
-
-        
-
-
+        pushValue(resultVec);
+        return;
     }
-    mlir::Value b = bothVec? builder.create<mlir::memref::LoadOP>(loc_, other, iv): other;
-    // if b is a vector determine size of both vectors
-    
-    
-    
-    */
+
+    // Vector-vector case (with padding)
+    auto leftSize = builder_.create<mlir::memref::DimOp>(loc_, left, 0);
+    auto rightSize = builder_.create<mlir::memref::DimOp>(loc_, right, 0);
+    auto cmp = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::sgt, leftSize, rightSize);
+    auto maxSize = builder_.create<mlir::arith::SelectOp>(loc_, cmp, leftSize, rightSize);
+
+    auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+    auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, maxSize);
+
+    auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+    auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+    auto zeroI32 = builder_.create<mlir::arith::ConstantOp>(loc_, builder_.getI32Type(), builder_.getI32IntegerAttr(0));
+
+    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, maxSize, step);
+    builder_.setInsertionPointToStart(forOp.getBody());
+    auto iv = forOp.getInductionVar();
+
+    // left in bounds
+    auto leftInBounds = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::slt, iv, leftSize);
+    auto leftVal = builder_.create<mlir::scf::IfOp>(loc_, leftInBounds, true);
+    builder_.setInsertionPointToStart(&leftVal.getThenRegion().front());
+    auto elemA = builder_.create<mlir::memref::LoadOp>(loc_, left, iv);
+    builder_.create<mlir::scf::YieldOp>(loc_, elemA);
+    builder_.setInsertionPointToStart(&leftVal.getElseRegion().front());
+    builder_.create<mlir::scf::YieldOp>(loc_, zeroI32);
+
+    // right in bounds
+    builder_.setInsertionPointAfter(leftVal);
+    auto rightInBounds = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::slt, iv, rightSize);
+    auto rightVal = builder_.create<mlir::scf::IfOp>(loc_, rightInBounds, true);
+    builder_.setInsertionPointToStart(&rightVal.getThenRegion().front());
+    auto elemB = builder_.create<mlir::memref::LoadOp>(loc_, right, iv);
+    builder_.create<mlir::scf::YieldOp>(loc_, elemB);
+    builder_.setInsertionPointToStart(&rightVal.getElseRegion().front());
+    builder_.create<mlir::scf::YieldOp>(loc_, zeroI32);
+
+    // Apply operation
+    builder_.setInsertionPointAfter(rightVal);
+    mlir::Value elemResult;
+    if (node->op == "+" || node->op == "-" || node->op == "*" || node->op == "/")
+        elemResult = arithOp(leftVal.getResult(0), rightVal.getResult(0));
+    else
+        elemResult = cmpOp(leftVal.getResult(0), rightVal.getResult(0));
+    builder_.create<mlir::memref::StoreOp>(loc_, elemResult, resultVec, iv);
+
+    pushValue(resultVec);
 }
     
 
@@ -212,13 +304,13 @@ void MLIRGen::visit(GeneratorNode* node){
     // get the full vector if the domain is a range
     node->domain->accept(*this);
     // get domain vector from stack
-    mlir::Value domainVec = v_stack.back(); v_stack.pop_back();
+    mlir::Value domainVec = v_stack_.back(); v_stack_.pop_back();
     // size = size of domain
     auto size = builder_.create<mlir::memref::DimOp>(loc_, domainVec, 0);
 
     // allocate space
     auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
+    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
     // initialize vector 
     auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
@@ -255,7 +347,7 @@ void MLIRGen::visit(FilterNode* node){
 
     // Allocate result vector (max possible size is domain size)
     auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
+    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
     // Index for writing into result vector
     // keeps track of where we are so we dont have gaps
@@ -290,15 +382,15 @@ void MLIRGen::visit(FilterNode* node){
     builder_.setInsertionPointToStart(&ifOp.getThenRegion().front());
     builder_.create<mlir::memref::StoreOp>(loc_, domainVal, result, outIdx);
     auto incrOutIdx = builder_.create<mlir::arith::AddIOp>(loc_, outIdx, oneIdx);
-    builder_.create<mlir::scf::YieldOp>(loc_, incrOutIdx);
+    builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{incrOutIdx});
 
     // Else outIdx not incremented
     builder_.setInsertionPointToStart(&ifOp.getElseRegion().front());
-    builder_.create<mlir::scf::YieldOp>(loc_, outIdx);
+    builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{outIdx});
 
     // make outIdx pass to next iteration
     builder_.setInsertionPointAfter(ifOp);
-    builder_.create<mlir::scf::YieldOp>(loc_, ifOp.getResult(0));
+    builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{ifOp.getResult(0)});
 
     pushValue(result);
 }
@@ -306,11 +398,11 @@ void MLIRGen::visit(FilterNode* node){
 // x ... x
 void MLIRGen::visit(RangeNode* node){
     node->start->accept(*this);
-    auto start = v_stack.back();
-    v_stack.pop_back();
+    auto start = v_stack_.back();
+    v_stack_.pop_back();
     node->end->accept(*this);
-    auto end = v_stack.back();
-    v_stack.pop_back();
+    auto end = v_stack_.back();
+    v_stack_.pop_back();
     // auto size = (end - start + 1);
     // ie 1 .. 3 = 1 2 3
     auto diff = builder_.create<mlir::arith::SubIOp>(loc_, end, start);
@@ -319,7 +411,7 @@ void MLIRGen::visit(RangeNode* node){
 
     //dynamic size vector
     auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
+    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
     // loop from 0 to size to fill vector
     auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
@@ -336,6 +428,85 @@ void MLIRGen::visit(RangeNode* node){
     builder_.create<mlir::memref::StoreOp>(loc_, val, result, iv);
     // put result on stack
     pushValue(result);
+}
+
+void MLIRGen::visit(IndexNode *node) {
+    node->array->accept(*this);
+    node->index->accept(*this);
+
+    mlir::Value indexVal = popValue();
+    mlir::Value vecVal = popValue();
+
+    auto vecType = vecVal.getType().dyn_cast<mlir::MemRefType>();
+    if (!vecType) {
+        throw std::runtime_error("MLIRGen error: cannot index non-vector value.");
+    }
+
+    if (indexVal.getType().isa<mlir::IntegerType>()) {
+        mlir::Value idx = indexVal;
+        if (!idx.getType().isa<mlir::IndexType>()) {
+            idx = builder_.create<mlir::arith::IndexCastOp>(
+                loc_, builder_.getIndexType(), indexVal);
+        }
+
+        auto size = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+
+        auto isGE = builder_.create<mlir::arith::CmpIOp>(
+            loc_, mlir::arith::CmpIPredicate::sge, idx, zeroIdx);
+        auto isLT = builder_.create<mlir::arith::CmpIOp>(
+            loc_, mlir::arith::CmpIPredicate::slt, idx, size);
+        auto inBounds = builder_.create<mlir::arith::AndIOp>(loc_, isGE, isLT);
+
+        // load element and create 0 constant
+        auto element = builder_.create<mlir::memref::LoadOp>(loc_, vecVal, idx);
+        auto zeroVal = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, builder_.getI32Type());
+
+        // return 0 if out of bounds
+        auto safeElem = builder_.create<mlir::arith::SelectOp>(loc_, inBounds, element, zeroVal);
+
+        pushValue(safeElem);
+
+        } else if (indexVal.getType().isa<mlir::MemRefType>()) { // using a vector as index
+            auto indexVec = indexVal;
+
+            auto vecSize = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
+            auto indexSize = builder_.create<mlir::memref::DimOp>(loc_, indexVec, 0);
+
+            // Create resulting vector
+            auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+            auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{indexSize});
+
+            auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+            auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+
+            // For loop: iterate through all indices in indexVec
+            auto forOp = builder_.create<mlir::scf::ForOp>(
+                loc_, zeroIdx, indexSize, step, mlir::ValueRange(),
+                [&](mlir::OpBuilder &nestedBuilder, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange) {
+                    mlir::Value currIdx = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, indexVec, iv);
+                    // cast
+                    if (!currIdx.getType().isa<mlir::IndexType>()) {
+                        currIdx = nestedBuilder.create<mlir::arith::IndexCastOp>(nestedLoc, nestedBuilder.getIndexType(), currIdx);
+                    }
+
+                    // Within index?
+                    auto isGE = nestedBuilder.create<mlir::arith::CmpIOp>(
+                        nestedLoc, mlir::arith::CmpIPredicate::sge, currIdx, zeroIdx);
+                    auto isLT = nestedBuilder.create<mlir::arith::CmpIOp>(
+                        nestedLoc, mlir::arith::CmpIPredicate::slt, currIdx, vecSize);
+                    auto inBounds = nestedBuilder.create<mlir::arith::AndIOp>(nestedLoc, isGE, isLT);
+
+                    auto element = nestedBuilder.create<mlir::memref::LoadOp>(nestedLoc, vecVal, currIdx);
+                    auto zeroVal = nestedBuilder.create<mlir::arith::ConstantIntOp>(nestedLoc, 0, nestedBuilder.getI32Type());
+                    auto safeElem = nestedBuilder.create<mlir::arith::SelectOp>(nestedLoc, inBounds, element, zeroVal);
+
+                    nestedBuilder.create<mlir::memref::StoreOp>(nestedLoc, safeElem, resultVec, iv);
+                }
+            );
+
+            pushValue(resultVec);
+        }
 }
 
 void MLIRGen::visit(CondNode* node) {
@@ -408,11 +579,9 @@ void MLIRGen::visit(LoopNode *node) {
             mlir::Value nextCondVal = popValue();
 
             // Yield the condition value forward
-            bodyBuilder.create<mlir::scf::YieldOp>(bodyLoc, nextCondVal);
+            bodyBuilder.create<mlir::scf::YieldOp>(bodyLoc, mlir::ValueRange{nextCondVal});
 
             builder_ = prevBuilder;
         }
     );
 }
-
-

@@ -10,12 +10,24 @@ using namespace antlr4;
 std::any ASTBuilder::visitFile(VCalcParser::FileContext *ctx) {
     std::vector<std::shared_ptr<ASTNode>> statements;
     for (auto statCtx : ctx->stat()) {
-        std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visit(statCtx));
+        // Ensure we dispatch into the concrete rule within 'stat' and not the trailing ';'
+        std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visitStat(statCtx));
         if (stmt) {
             statements.push_back(std::move(stmt));
         }
     }
     return std::make_shared<FileNode>(std::move(statements));
+}
+
+std::any ASTBuilder::visitStat(VCalcParser::StatContext *ctx) {
+    // Route to the actual statement inside 'stat: <rule> END'
+    if (ctx->intDec())       return visitIntDec(ctx->intDec());
+    if (ctx->vectorDec())    return visitVectorDec(ctx->vectorDec());
+    if (ctx->assign())       return visitAssign(ctx->assign());
+    if (ctx->cond())         return visitCond(ctx->cond());
+    if (ctx->loop())         return visitLoop(ctx->loop());
+    if (ctx->print())        return visitPrint(ctx->print());
+    return std::shared_ptr<ASTNode>{};
 }
 
 std::any ASTBuilder::visitExpr(VCalcParser::ExprContext *ctx) {
@@ -58,7 +70,7 @@ std::any ASTBuilder::visitCond(VCalcParser::CondContext *ctx) {
     auto condExpr = std::any_cast<std::shared_ptr<ExprNode>>(condAny);
     std::vector<std::shared_ptr<ASTNode>> body;
     for (auto statCtx : ctx->blockStat()) {
-        std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visit(statCtx));
+        std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visitBlockStat(statCtx));
         if (stmt) {
             body.push_back(stmt);
         }
@@ -72,13 +84,22 @@ std::any ASTBuilder::visitLoop(VCalcParser::LoopContext *ctx) {
     auto condExpr = std::any_cast<std::shared_ptr<ExprNode>>(condAny);
     std::vector<std::shared_ptr<ASTNode>> body;
     for (auto statCtx : ctx->blockStat()) {
-        std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visit(statCtx));
+        std::shared_ptr<ASTNode> stmt = std::any_cast<std::shared_ptr<ASTNode>>(visitBlockStat(statCtx));
         if (stmt) {
             body.push_back(std::move(stmt));
         }
     }
     auto node = std::make_shared<LoopNode>(condExpr, std::move(body));
     return std::static_pointer_cast<ASTNode>(node);
+}
+
+std::any ASTBuilder::visitBlockStat(VCalcParser::BlockStatContext *ctx) {
+    // Route to the actual statement inside 'blockStat: <rule> END'
+    if (ctx->assign())   return visitAssign(ctx->assign());
+    if (ctx->cond())     return visitCond(ctx->cond());
+    if (ctx->loop())     return visitLoop(ctx->loop());
+    if (ctx->print())    return visitPrint(ctx->print());
+    return std::shared_ptr<ASTNode>{};
 }
 
 std::any ASTBuilder::visitEqualityExpr(VCalcParser::EqualityExprContext *ctx) {
@@ -161,12 +182,14 @@ std::any ASTBuilder::visitRangeExpr(VCalcParser::RangeExprContext *ctx) {
 }
 
 std::any ASTBuilder::visitIndexExpr(VCalcParser::IndexExprContext *ctx) {
+    // no expr, go to atom
+    if (!ctx->expr()) {
+        return visit(ctx->atom());
+    }
+
     auto arrayAny = visit(ctx->atom());
     auto array = std::any_cast<std::shared_ptr<ExprNode>>(arrayAny);
-    std::shared_ptr<ExprNode> index = nullptr;
-    if (ctx->expr()) {
-        index = std::any_cast<std::shared_ptr<ExprNode>>(visit(ctx->expr()));
-    }
+    auto index = std::any_cast<std::shared_ptr<ExprNode>>(visit(ctx->expr()));
     auto node = std::make_shared<IndexNode>(array, index);
     return std::static_pointer_cast<ExprNode>(node);
 }
