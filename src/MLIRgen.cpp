@@ -9,6 +9,8 @@ After generating the MLIR, Backend will lower the dialects and output LLVM IR
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+
 
 #include <stdexcept>
 
@@ -20,11 +22,11 @@ MLIRGen::MLIRGen(BackEnd& backend)
       loc_(backend.getLoc()) {}
 
 mlir::Value MLIRGen::popValue() {
-    if (v_stack.empty()) {
+    if (v_stack_.empty()) {
         throw std::runtime_error("MLIRGen internal error: value stack underflow.");
     }
-    mlir::Value value = v_stack.back();
-    v_stack.pop_back();
+    mlir::Value value = v_stack_.back();
+    v_stack_.pop_back();
     return value;
 }
 
@@ -32,7 +34,7 @@ void MLIRGen::pushValue(mlir::Value value) {
     if (!value) {
         throw std::runtime_error("MLIRGen internal error: attempting to push empty value onto stack.");
     }
-    v_stack.push_back(value);
+    v_stack_.push_back(value);
 }
 
 void MLIRGen::visit(FileNode* node) {
@@ -75,11 +77,36 @@ void MLIRGen::visit(AssignNode* node) {
     mlir::Value value = popValue();
     symbolTable_[node->id->name] = value;
 }
-
 void MLIRGen::visit(PrintNode* node) {
     node->printExpr->accept(*this);
-    popValue();
-    // Printing support would lower to a printf call; not implemented yet.
+    mlir::Value val = popValue();
+
+    // Integer print
+    if (val.getType() == builder_.getI32Type()) {
+        // Define function type for printi(i32)
+        auto funcType = mlir::FunctionType::get(
+            builder_.getContext(),
+            {builder_.getI32Type()},
+            {}
+        );
+
+        // Look up or create the printi function symbol
+        auto printFunc = module_.lookupSymbol<mlir::func::FuncOp>("printi");
+        if (!printFunc) {
+            printFunc = mlir::func::FuncOp::create(loc_, "printi", funcType);
+            module_.push_back(printFunc);
+        }
+
+        // Call printi(val)
+        builder_.create<mlir::func::CallOp>(
+            loc_,
+            "printi",                  // symbol name
+            mlir::TypeRange(),         // no return type
+            mlir::ValueRange{val}      // arguments
+        );
+    } else {
+
+    }
 }
 
 //! Add support for different size vectors
@@ -165,7 +192,7 @@ void MLIRGen::visit(GeneratorNode* node){
     // get the full vector if the domain is a range
     node->domain->accept(*this);
     // get domain vector from stack
-    mlir::Value domainVec = v_stack.back(); v_stack.pop_back();
+    mlir::Value domainVec = v_stack_.back(); v_stack_.pop_back();
     // size = size of domain
     auto size = builder_.create<mlir::memref::DimOp>(loc_, domainVec, 0);
 
@@ -259,11 +286,11 @@ void MLIRGen::visit(FilterNode* node){
 // x ... x
 void MLIRGen::visit(RangeNode* node){
     node->start->accept(*this);
-    auto start = v_stack.back();
-    v_stack.pop_back();
+    auto start = v_stack_.back();
+    v_stack_.pop_back();
     node->end->accept(*this);
-    auto end = v_stack.back();
-    v_stack.pop_back();
+    auto end = v_stack_.back();
+    v_stack_.pop_back();
     // auto size = (end - start + 1);
     // ie 1 .. 3 = 1 2 3
     auto diff = builder_.create<mlir::arith::SubIOp>(loc_, end, start);
@@ -289,6 +316,49 @@ void MLIRGen::visit(RangeNode* node){
     builder_.create<mlir::memref::StoreOp>(loc_, val, result, iv);
     // put result on stack
     pushValue(result);
+}
+
+void MLIRGen::visit(IndexNode *node) {
+    node->array->accept(*this);
+    node->index->accept(*this);
+
+    mlir::Value indexVal = popValue();
+    mlir::Value vecVal = popValue();
+
+    auto vecType = vecVal.getType().dyn_cast<mlir::MemRefType>();
+    if (!vecType) {
+        throw std::runtime_error("MLIRGen error: cannot index non-vector value.");
+    }
+
+    if (indexVal.getType().isa<mlir::IntegerType>()) {
+        mlir::Value idx = indexVal;
+        if (!idx.getType().isa<mlir::IndexType>()) {
+            idx = builder_.create<mlir::arith::IndexCastOp>(
+                loc_, builder_.getIndexType(), indexVal);
+        }
+
+        auto size = builder_.create<mlir::memref::DimOp>(loc_, vecVal, 0);
+        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+
+        auto isGE = builder_.create<mlir::arith::CmpIOp>(
+            loc_, mlir::arith::CmpIPredicate::sge, idx, zeroIdx);
+        auto isLT = builder_.create<mlir::arith::CmpIOp>(
+            loc_, mlir::arith::CmpIPredicate::slt, idx, size);
+        auto inBounds = builder_.create<mlir::arith::AndIOp>(loc_, isGE, isLT);
+
+        // load element and create 0 constant
+        auto element = builder_.create<mlir::memref::LoadOp>(loc_, vecVal, idx);
+        auto zeroVal = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, builder_.getI32Type());
+
+        // return 0 if out of bounds
+        auto safeElem = builder_.create<mlir::arith::SelectOp>(loc_, inBounds, element, zeroVal);
+
+        pushValue(safeElem);
+    } else {
+        // vector indexing not yet implemented.
+    }
+
+
 }
 
 void MLIRGen::visit(CondNode* node) {
@@ -367,5 +437,4 @@ void MLIRGen::visit(LoopNode *node) {
         }
     );
 }
-
 
