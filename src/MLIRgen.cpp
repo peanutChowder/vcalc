@@ -187,6 +187,9 @@ void MLIRGen::visit(BinaryOpNode* node) {
     bool left_isVec = left.getType().isa<mlir::MemRefType>();
     bool right_isVec = right.getType().isa<mlir::MemRefType>();
 
+    mlir::Value result;
+
+      //lambdas for arithmetic and comparison
     auto arithOp = [&](mlir::Value a, mlir::Value b) -> mlir::Value {
         if (node->op == "+") return builder_.create<mlir::arith::AddIOp>(loc_, a, b);
         if (node->op == "-") return builder_.create<mlir::arith::SubIOp>(loc_, a, b);
@@ -201,90 +204,48 @@ void MLIRGen::visit(BinaryOpNode* node) {
         if (node->op == "!=") return builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, a, b);
         throw std::runtime_error("MLIRGen error: unsupported comparison operator '" + node->op + "'.");
     };
-
-    // Scalar case
-    if (!left_isVec && !right_isVec) {
-        mlir::Value result;
-        if (node->op == "+" || node->op == "-" || node->op == "*" || node->op == "/")
+    // if both are integers
+    if(!left_isVec && !right_isVec){
+        if(node->op == "+" || node->op == "-" || node->op == "*"|| node->op == "/"){
             result = arithOp(left, right);
-        else
+        }else{
             result = cmpOp(left, right);
+        }
         pushValue(result);
         return;
     }
-
-    // Vector-scalar case
-    if (left_isVec != right_isVec) {
-        mlir::Value vec = left_isVec ? left : right;
-        mlir::Value scal = left_isVec ? right : left;
-        auto size = builder_.create<mlir::memref::DimOp>(loc_, vec, 0);
-        auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-        auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, size);
-
-        auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
-        auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-        auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step);
-        builder_.setInsertionPointToStart(forOp.getBody());
-        auto iv = forOp.getInductionVar();
-
-        auto elem = builder_.create<mlir::memref::LoadOp>(loc_, vec, iv);
-        mlir::Value elemResult;
-        if (node->op == "+" || node->op == "-" || node->op == "*" || node->op == "/")
-            elemResult = arithOp(elem, scal);
-        else
-            elemResult = cmpOp(elem, scal);
-        builder_.create<mlir::memref::StoreOp>(loc_, elemResult, resultVec, iv);
-
-        pushValue(resultVec);
-        return;
+    mlir::Value vec, other;
+    bool bothVec;
+    if(!left_isVec && right_isVec){
+        // right is the vector
+        vec = right;
+        other = left; // left is scalar
+        bothVec = false;
+    }else if(!left_isVec && right_isVec){
+        vec = left;
+        other = right; // right is scalar
+        bothVec = false;
+    }else{
+        vec = right;
+        other = left;
+        bothVec = true;
     }
-
-    // Vector-vector case (with padding)
-    auto leftSize = builder_.create<mlir::memref::DimOp>(loc_, left, 0);
-    auto rightSize = builder_.create<mlir::memref::DimOp>(loc_, right, 0);
-    auto cmp = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::sgt, leftSize, rightSize);
-    auto maxSize = builder_.create<mlir::arith::SelectOp>(loc_, cmp, leftSize, rightSize);
-
+    auto size = builder_.create<mlir::memref::DimOp>(loc_, vec, 0);
     auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-    auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, maxSize);
+    auto resultVec = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
     auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
     auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-    auto zeroI32 = builder_.create<mlir::arith::ConstantOp>(loc_, builder_.getI32Type(), builder_.getI32IntegerAttr(0));
-
-    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, maxSize, step);
+    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step);
     builder_.setInsertionPointToStart(forOp.getBody());
     auto iv = forOp.getInductionVar();
 
-    // left in bounds
-    auto leftInBounds = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::slt, iv, leftSize);
-    auto leftVal = builder_.create<mlir::scf::IfOp>(loc_, leftInBounds, true);
-    builder_.setInsertionPointToStart(&leftVal.getThenRegion().front());
-    auto elemA = builder_.create<mlir::memref::LoadOp>(loc_, left, iv);
-    builder_.create<mlir::scf::YieldOp>(loc_, elemA);
-    builder_.setInsertionPointToStart(&leftVal.getElseRegion().front());
-    builder_.create<mlir::scf::YieldOp>(loc_, zeroI32);
-
-    // right in bounds
-    builder_.setInsertionPointAfter(leftVal);
-    auto rightInBounds = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::slt, iv, rightSize);
-    auto rightVal = builder_.create<mlir::scf::IfOp>(loc_, rightInBounds, true);
-    builder_.setInsertionPointToStart(&rightVal.getThenRegion().front());
-    auto elemB = builder_.create<mlir::memref::LoadOp>(loc_, right, iv);
-    builder_.create<mlir::scf::YieldOp>(loc_, elemB);
-    builder_.setInsertionPointToStart(&rightVal.getElseRegion().front());
-    builder_.create<mlir::scf::YieldOp>(loc_, zeroI32);
-
-    // Apply operation
-    builder_.setInsertionPointAfter(rightVal);
-    mlir::Value elemResult;
-    if (node->op == "+" || node->op == "-" || node->op == "*" || node->op == "/")
-        elemResult = arithOp(leftVal.getResult(0), rightVal.getResult(0));
-    else
-        elemResult = cmpOp(leftVal.getResult(0), rightVal.getResult(0));
-    builder_.create<mlir::memref::StoreOp>(loc_, elemResult, resultVec, iv);
-
-    pushValue(resultVec);
+    /*
+    need to check for same size
+    perform operations
+    
+    
+    */
 }
     
 
