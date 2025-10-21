@@ -496,17 +496,20 @@ void MLIRGen::visit(CondNode* node) {
         throw std::runtime_error("MLIRGen error: unsupported condition type");
     }
 
-    auto ifOp = builder_.create<mlir::scf::IfOp>(loc_, boolVal, /*withElseRegion=*/true);
-    builder_.setInsertionPointToStart(&ifOp.getThenRegion().front());
-    for (const auto& stmt : node->body) {
-        if (stmt) stmt->accept(*this);
-    }
-    builder_.create<mlir::scf::YieldOp>(loc_);
-    builder_.setInsertionPointToStart(&ifOp.getElseRegion().front());
-    builder_.create<mlir::scf::YieldOp>(loc_);
-    // Place subsequent statements after the completed if-op
-    builder_.setInsertionPointAfter(ifOp);
+    builder_.create<mlir::scf::IfOp>(
+        loc_,
+        boolVal,
+        [&](mlir::OpBuilder &thenBuilder, mlir::Location nestedLoc) {
+            auto prevBuilder_ = builder_;
+            builder_ = thenBuilder;
+            for (const auto &st: node->body) {
+                st->accept(*this);
+            }
 
+            thenBuilder.create<mlir::scf::YieldOp>(nestedLoc);
+            builder_ = prevBuilder_;
+        }
+    );
 }
 
 void MLIRGen::visit(LoopNode *node) {
