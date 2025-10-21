@@ -1,0 +1,10 @@
+//CHECK_FILE:test10.out
+
+
+
+int a = 5;
+int b = 3;
+
+if (a < 10) 
+    print(25);
+fi;
