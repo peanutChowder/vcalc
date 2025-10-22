@@ -366,36 +366,44 @@ void MLIRGen::visit(FilterNode* node){
 // x ... x
 void MLIRGen::visit(RangeNode* node){
     node->start->accept(*this);
-    auto start = v_stack_.back();
+    auto startIdx = v_stack_.back();
     v_stack_.pop_back();
     node->end->accept(*this);
-    auto end = v_stack_.back();
+    auto endIdx = v_stack_.back();
     v_stack_.pop_back();
-    // auto size = (end - start + 1);
-    // ie 1 .. 3 = 1 2 3
-    auto diff = builder_.create<mlir::arith::SubIOp>(loc_, end, start);
-    auto one = builder_.create<mlir::arith::ConstantOp>(loc_, builder_.getI32Type(), builder_.getI32IntegerAttr(1));
-    auto size = builder_.create<mlir::arith::AddIOp>(loc_, diff, one);
 
-    //dynamic size vector
-    auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
-    auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
+    if (!startIdx.getType().isa<mlir::IndexType>())
+        startIdx = builder_.create<mlir::arith::IndexCastOp>(loc_, builder_.getIndexType(), startIdx);
+    if (!endIdx.getType().isa<mlir::IndexType>())
+        endIdx = builder_.create<mlir::arith::IndexCastOp>(loc_, builder_.getIndexType(), endIdx);
 
-    // loop from 0 to size to fill vector
-    auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
-    // increment by 1 in the for loop
-    auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-    // for loop
-    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step);
-    builder_.setInsertionPointToStart(forOp.getBody());
-    //loop index
-    auto iv = forOp.getInductionVar();
-    // value (start + iv)
-    auto val = builder_.create<mlir::arith::AddIOp>(loc_, start, iv);
-    // store in result vector
-    builder_.create<mlir::memref::StoreOp>(loc_, val, result, iv);
+    mlir::Value diffIdx = builder_.create<mlir::arith::SubIOp>(loc_, endIdx, startIdx);
+    mlir::Value oneIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
+    mlir::Value sizeI32 = builder_.create<mlir::arith::AddIOp>(loc_, diffIdx, oneIdx);
+    mlir::Value sizeIdx = builder_.create<mlir::arith::IndexCastOp>(loc_, builder_.getIndexType(), sizeI32);
+
+    mlir::MemRefType rangeVecTy = mlir::MemRefType::get({mlir::ShapedType::kDynamic}, builder_.getI32Type());
+
+
+
+    mlir::Value vector = builder_.create<mlir::memref::AllocOp>(loc_, rangeVecTy, mlir::ValueRange{sizeIdx});
+    mlir::Value endPlusOneIdx = builder_.create<mlir::arith::AddIOp>(loc_, endIdx, oneIdx); // Add one for end of loop in for loop
+
+    builder_.create<mlir::scf::ForOp>(
+        loc_, 
+        startIdx, endPlusOneIdx, oneIdx,
+        mlir::ValueRange(),
+        [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
+            mlir::Value fromZeroIdx = forBuilder.create<mlir::arith::SubIOp>(forLoc, iv, startIdx);
+            mlir::Value valI32 = forBuilder.create<mlir::arith::IndexCastOp>(forLoc, builder_.getI32Type(), iv);
+            forBuilder.create<mlir::memref::StoreOp>(forLoc, valI32, vector, mlir::ValueRange{fromZeroIdx});
+
+            forBuilder.create<mlir::scf::YieldOp>(forLoc);
+        }
+    );
+
     // put result on stack
-    pushValue(result);
+    pushValue(vector);
 }
 
 void MLIRGen::visit(IndexNode *node) {
