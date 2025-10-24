@@ -53,13 +53,19 @@ int main(int argc, char **argv) {
   MLIRGen gen(backend);
   try {
     gen.visit(ast.get());
+    // Ensure function is properly terminated before verification
+    backend.finalizeWithReturnZero();
+    
+    if (mlir::failed(mlir::verify(backend.getModule()))) {
+      backend.getModule().emitError("Invalid MLIR module generated");
+      backend.getModule().dump();
+        return 1;
+    }
   } catch (const std::exception &e) {
     std::cerr << "Compiler error during MLIR generation: " << e.what() << std::endl;
     return 1;
   }
-
-  // Finish main with return 0
-  backend.finalizeWithReturnZero();
+  std::cerr << "MLIR gen complete\n";
 
   // Lower and emit LLVM IR
   backend.lowerDialects();

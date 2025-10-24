@@ -79,6 +79,17 @@ void BackEnd::dumpLLVM(std::ostream &os) {
 }
 
 void BackEnd::finalizeWithReturnZero() {
+    // Ensure the 'main' function has a terminating return. Do not rely on
+    // the current builder insertion point.
+    auto mainFunc = module.lookupSymbol<mlir::func::FuncOp>("main");
+    if (!mainFunc)
+        return;
+    mlir::Block &entry = mainFunc.getBody().front();
+    if (!entry.empty() && llvm::isa<mlir::func::ReturnOp>(entry.back()))
+        return; // already terminated
+
+    mlir::OpBuilder::InsertionGuard guard(*builder);
+    builder->setInsertionPointToEnd(&entry);
     auto zero = builder->create<mlir::arith::ConstantIntOp>(loc, 0, builder->getI32Type());
     builder->create<mlir::func::ReturnOp>(builder->getUnknownLoc(), mlir::ValueRange{zero});
 }
