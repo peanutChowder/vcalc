@@ -1,0 +1,3 @@
+//CHECK_FILE:test14.out
+
+vector v = [i in 1..6];
