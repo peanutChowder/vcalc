@@ -38,7 +38,7 @@ void MLIRGen::pushValue(mlir::Value value) {
 }
 
 void MLIRGen::visit(FileNode* node) {
-    for (const auto& stmt : node->statements) {
+    for (const std::shared_ptr<ASTNode>& stmt : node->statements) {
         if (stmt) {
             stmt->accept(*this);
         }
@@ -46,9 +46,9 @@ void MLIRGen::visit(FileNode* node) {
 }
 
 void MLIRGen::visit(IntNode* node) {
-    auto type = builder_.getI32Type();
-    auto attr = builder_.getI32IntegerAttr(node->value);
-    auto constant = builder_.create<mlir::arith::ConstantOp>(loc_, type, attr);
+    mlir::Type type = builder_.getI32Type();
+    mlir::IntegerAttr attr = builder_.getI32IntegerAttr(node->value);
+    mlir::arith::ConstantOp constant = builder_.create<mlir::arith::ConstantOp>(loc_, type, attr);
     pushValue(constant.getResult());
 }
 
