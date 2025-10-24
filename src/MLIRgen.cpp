@@ -167,7 +167,11 @@ void MLIRGen::visit(PrintNode* node) {
                         ifBuilder.create<mlir::LLVM::CallOp>(ifLoc, printfFunc, mlir::ValueRange{fmtC, spaceChar});
                         ifBuilder.create<mlir::scf::YieldOp>(ifLoc);
                     },
-                    nullptr);
+                    [&](mlir::OpBuilder &elseBuilder, mlir::Location elseLoc) {
+                        elseBuilder.create<mlir::scf::YieldOp>(elseLoc);
+                    });
+                
+                nestedBuilder.create<mlir::scf::YieldOp>(nestedLoc);
             });
 
         //  closing bracket and newline
