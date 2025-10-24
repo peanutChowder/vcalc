@@ -379,8 +379,7 @@ void MLIRGen::visit(RangeNode* node){
 
     mlir::Value diffIdx = builder_.create<mlir::arith::SubIOp>(loc_, endIdx, startIdx);
     mlir::Value oneIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-    mlir::Value sizeI32 = builder_.create<mlir::arith::AddIOp>(loc_, diffIdx, oneIdx);
-    mlir::Value sizeIdx = builder_.create<mlir::arith::IndexCastOp>(loc_, builder_.getIndexType(), sizeI32);
+    mlir::Value sizeIdx = builder_.create<mlir::arith::AddIOp>(loc_, diffIdx, oneIdx);
 
     mlir::MemRefType rangeVecTy = mlir::MemRefType::get({mlir::ShapedType::kDynamic}, builder_.getI32Type());
 
@@ -395,7 +394,7 @@ void MLIRGen::visit(RangeNode* node){
         mlir::ValueRange(),
         [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
             mlir::Value fromZeroIdx = forBuilder.create<mlir::arith::SubIOp>(forLoc, iv, startIdx);
-            mlir::Value valI32 = forBuilder.create<mlir::arith::IndexCastOp>(forLoc, builder_.getI32Type(), iv);
+            mlir::Value valI32 = forBuilder.create<mlir::arith::IndexCastOp>(forLoc, forBuilder.getI32Type(), iv);
             forBuilder.create<mlir::memref::StoreOp>(forLoc, valI32, vector, mlir::ValueRange{fromZeroIdx});
 
             forBuilder.create<mlir::scf::YieldOp>(forLoc);
