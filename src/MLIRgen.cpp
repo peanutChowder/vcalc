@@ -268,7 +268,7 @@ void MLIRGen::visit(GeneratorNode* node){
     auto size = builder_.create<mlir::memref::DimOp>(loc_, domainVec, 0);
 
     // allocate space
-    auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+    auto memrefType = mlir::MemRefType::get({mlir::ShapedType::kDynamic}, builder_.getI32Type());
     auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
     // initialize vector 
