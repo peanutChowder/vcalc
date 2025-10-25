@@ -263,7 +263,8 @@ void MLIRGen::visit(GeneratorNode* node){
     // get the full vector if the domain is a range
     node->domain->accept(*this);
     // get domain vector from stack
-    mlir::Value domainVec = v_stack_.back(); v_stack_.pop_back();
+    mlir::Value domainVec = v_stack_.back(); 
+    v_stack_.pop_back();
     // size = size of domain
     auto size = builder_.create<mlir::memref::DimOp>(loc_, domainVec, 0);
 
@@ -271,25 +272,49 @@ void MLIRGen::visit(GeneratorNode* node){
     auto memrefType = mlir::MemRefType::get({mlir::ShapedType::kDynamic}, builder_.getI32Type());
     auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
+    // handle variable if outer namespace shadows generator
+    const std::string domainVar = node->id->name;
+    mlir::Value outerVarVal = nullptr;
+    try {
+        node->id->accept(*this);
+        outerVarVal = popValue();
+    } catch (const std::runtime_error &e) {
+    }
+
+    // If variable does not exist in outer scope, declare it for the generator
+    if (outerVarVal == nullptr) {
+        auto memTy = mlir::MemRefType::get({1}, builder_.getI32Type());
+        auto mem = builder_.create<mlir::memref::AllocOp>(loc_, memTy);
+        varMem_[node->id->name] = mem;
+    }
+
     // initialize vector 
     auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
     auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step);
-    builder_.setInsertionPointToStart(forOp.getBody());
-    auto iv = forOp.getInductionVar();
 
-    //get domain value
-    auto domain_val = builder_.create<mlir::memref::LoadOp>(loc_,domainVec, iv);
-    // declare generator var in current scope
-    // currentScope->declare(node->id->name, ValueType::INTEGER);
-    //place on stack so expression can use it
-    pushValue(domain_val);
-    // visit expression
-    node->body->accept(*this);
-    auto bodyResult = popValue();
+    builder_.create<mlir::scf::ForOp>(
+        loc_,
+        zero, step, size,
+        mlir::ValueRange(),
+        [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
+            auto domain_val = forBuilder.create<mlir::memref::LoadOp>(loc_,domainVec, iv);
+            varMem_[node->id->name] = domain_val;
+            pushValue(domain_val);
+            // visit expression
+            node->body->accept(*this);
+            auto singleResult = popValue();
+            forBuilder.create<mlir::memref::StoreOp>(loc_, singleResult, result, iv);
 
-    // store result in result vector
-    builder_.create<mlir::memref::StoreOp>(loc_, bodyResult, result, iv);
+            forBuilder.create<mlir::scf::YieldOp>(forLoc);
+        }
+    );
+
+    // Restore outer var value (if it existed, else delete it)
+    if (outerVarVal != nullptr) {
+        varMem_[node->id->name] = outerVarVal;
+    } else {
+        varMem_.erase(node->id->name);
+    }
     
     // currentScope = savedScope;
     //place result on stack
