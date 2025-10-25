@@ -256,68 +256,49 @@ void MLIRGen::visit(BinaryOpNode* node) {
 
 // domain can be a range or a vector
 void MLIRGen::visit(GeneratorNode* node){
-    // new scope
-    // Scope* savedScope = currentScope;
-    // currentScope = currentScope_.createChild();
-
-    // get the full vector if the domain is a range
+    // Evaluate domain to a concrete vector
     node->domain->accept(*this);
-    // get domain vector from stack
-    mlir::Value domainVec = v_stack_.back(); 
-    v_stack_.pop_back();
+    mlir::Value domainVec = popValue();
+
     // size = size of domain
     auto size = builder_.create<mlir::memref::DimOp>(loc_, domainVec, 0);
 
-    // allocate space
+    // allocate result vector
     auto memrefType = mlir::MemRefType::get({mlir::ShapedType::kDynamic}, builder_.getI32Type());
     auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
-    // handle variable if outer namespace shadows generator
-    const std::string domainVar = node->id->name;
-    mlir::Value outerVarVal = nullptr;
-    try {
-        node->id->accept(*this);
-        outerVarVal = popValue();
-    } catch (const std::runtime_error &e) {
-    }
+    // Save any outer binding for the generator variable (SSA symbol table)
+    const std::string genName = node->id->name;
+    auto prevSym = symbolTable_.find(genName);
+    bool hadPrevSym = prevSym != symbolTable_.end();
+    mlir::Value prevSymVal;
+    if (hadPrevSym) prevSymVal = prevSym->second;
 
-    // If variable does not exist in outer scope, declare it for the generator
-    if (outerVarVal == nullptr) {
-        auto memTy = mlir::MemRefType::get({1}, builder_.getI32Type());
-        auto mem = builder_.create<mlir::memref::AllocOp>(loc_, memTy);
-        varMem_[node->id->name] = mem;
-    }
-
-    // initialize vector 
     auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
     auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
 
+    // for iv in [0, size):
     builder_.create<mlir::scf::ForOp>(
-        loc_,
-        zero, step, size,
-        mlir::ValueRange(),
+        loc_, zero, size, step, mlir::ValueRange{},
         [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
-            auto domain_val = forBuilder.create<mlir::memref::LoadOp>(loc_,domainVec, iv);
-            varMem_[node->id->name] = domain_val;
-            pushValue(domain_val);
-            // visit expression
-            node->body->accept(*this);
-            auto singleResult = popValue();
-            forBuilder.create<mlir::memref::StoreOp>(loc_, singleResult, result, iv);
+            // i = domainVec[iv]
+            auto iVal = forBuilder.create<mlir::memref::LoadOp>(forLoc, domainVec, iv);
+            symbolTable_[genName] = iVal;
 
+            // Evaluate body with 'i' in symbol table
+            node->body->accept(*this);
+            auto elem = popValue();
+
+            // result[iv] = elem
+            forBuilder.create<mlir::memref::StoreOp>(forLoc, elem, result, iv);
             forBuilder.create<mlir::scf::YieldOp>(forLoc);
         }
     );
 
-    // Restore outer var value (if it existed, else delete it)
-    if (outerVarVal != nullptr) {
-        varMem_[node->id->name] = outerVarVal;
-    } else {
-        varMem_.erase(node->id->name);
-    }
-    
-    // currentScope = savedScope;
-    //place result on stack
+    // Restore outer symbol binding
+    if (hadPrevSym) symbolTable_[genName] = prevSymVal; else symbolTable_.erase(genName);
+
+    // Output the result vector
     pushValue(result);
 }
 
