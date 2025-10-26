@@ -333,12 +333,18 @@ void MLIRGen::visit(FilterNode* node){
     mlir::Value prevSymVal;
     if (hadPrevSym) prevSymVal = prevSym->second;
 
-    // for iv in [0, size):
-    builder_.create<mlir::scf::ForOp>(
-        loc_, zero, size, step, mlir::ValueRange{},
-        [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
-            mlir::OpBuilder outerBuilder = builder_;
+    // for iv in [0, size) with a loop-carried write index
+    auto forOp = builder_.create<mlir::scf::ForOp>(
+        loc_, zero, size, step, mlir::ValueRange{zero},
+        [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange iterArgs) {
+            // Current write index carried by the loop
+            mlir::Value currIdx = iterArgs.front();
+
+            // Switch insertion to loop body
+            auto prevBuilder = builder_;
+            auto prevLoc = loc_;
             builder_ = forBuilder;
+            loc_ = forLoc;
 
             // i = domainVec[iv], set this before eval predicate
             auto iVal = builder_.create<mlir::memref::LoadOp>(loc_, domainVec, iv);
@@ -364,27 +370,47 @@ void MLIRGen::visit(FilterNode* node){
                 throw std::runtime_error("MLIRGen error: unsupported predicate type in filter");
             }
 
+            // Conditionally store the element
             builder_.create<mlir::scf::IfOp>(
-                loc_,
-                predBool,
+                loc_, predBool,
                 [&](mlir::OpBuilder &ifBuilder, mlir::Location ifLoc) {
-                    // result[resultIdx] = current element from domain
-                    ifBuilder.create<mlir::memref::StoreOp>(ifLoc, iVal, result, resultIdx);
-                    // advance write index
-                    resultIdx = ifBuilder.create<mlir::arith::AddIOp>(ifLoc, resultIdx, step);
+                    ifBuilder.create<mlir::memref::StoreOp>(ifLoc, iVal, result, currIdx);
                     ifBuilder.create<mlir::scf::YieldOp>(ifLoc);
                 }
             );
 
-            // terminate the loop body block
-            builder_.create<mlir::scf::YieldOp>(loc_);
-            builder_ = outerBuilder;
+            // nextIdx = select(predBool, currIdx + 1, currIdx)
+            auto nextIdxInc = builder_.create<mlir::arith::AddIOp>(loc_, currIdx, step);
+            auto nextIdx = builder_.create<mlir::arith::SelectOp>(loc_, predBool, nextIdxInc, currIdx);
+
+            // yield nextIdx as loop-carried value
+            builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{nextIdx});
+
+            // Restore original builder/location
+            builder_ = prevBuilder;
+            loc_ = prevLoc;
         }
     );
+
+    // final length of the filtered vector
+    mlir::Value finalLen = forOp.getResult(0);
+
+    // Create compact result of exact length and copy values
+    auto compact = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{finalLen});
+    builder_.create<mlir::scf::ForOp>(
+        loc_, zero, finalLen, step, mlir::ValueRange{},
+        [&](mlir::OpBuilder &nb, mlir::Location nl, mlir::Value iv, mlir::ValueRange) {
+            auto e = nb.create<mlir::memref::LoadOp>(nl, result, iv);
+            nb.create<mlir::memref::StoreOp>(nl, e, compact, iv);
+            nb.create<mlir::scf::YieldOp>(nl);
+        }
+    );
+
     // Restore outer symbol binding for loop variable
     if (hadPrevSym) symbolTable_[genName] = prevSymVal; else symbolTable_.erase(genName);
 
-    pushValue(result);
+    // Return compact vector
+    pushValue(compact);
 }
 
 // x ... x
