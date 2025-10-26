@@ -339,40 +339,50 @@ void MLIRGen::visit(FilterNode* node){
         [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
             mlir::OpBuilder outerBuilder = builder_;
             builder_ = forBuilder;
-            mlir::Location outerLoc = loc_;
-            loc_ = forLoc;
 
             // i = domainVec[iv], set this before eval predicate
             auto iVal = builder_.create<mlir::memref::LoadOp>(loc_, domainVec, iv);
-            varMem_[node->id->name] = iVal;
+            // Bind the loop variable as an SSA value (not memory-backed)
+            symbolTable_[node->id->name] = iVal;
 
             // Evaluate predicate
             node->predicate->accept(*this);
             mlir::Value predicateResult = popValue();
-            auto isNotZero = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predicateResult, zero);
+            // Convert predicate to i1
+            mlir::Value predBool;
+            if (auto it = predicateResult.getType().dyn_cast<mlir::IntegerType>()) {
+                if (it.getWidth() == 1) {
+                    predBool = predicateResult;
+                } else {
+                    auto zeroI = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, it);
+                    predBool = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predicateResult, zeroI);
+                }
+            } else if (predicateResult.getType().isa<mlir::IndexType>()) {
+                auto zeroIdxLocal = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
+                predBool = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predicateResult, zeroIdxLocal);
+            } else {
+                throw std::runtime_error("MLIRGen error: unsupported predicate type in filter");
+            }
 
             builder_.create<mlir::scf::IfOp>(
                 loc_,
-                isNotZero,
+                predBool,
                 [&](mlir::OpBuilder &ifBuilder, mlir::Location ifLoc) {
-                    mlir::OpBuilder outerBuilder = builder_;
-                    builder_ = ifBuilder;
-                    mlir::Location outerLoc = loc_;
-                    loc_ = ifLoc;
-
-                    // result[resultIdx] = elem
-                    builder_.create<mlir::memref::StoreOp>(loc_, iVal, result, resultIdx);
-
-                    resultIdx = builder_.create<mlir::arith::AddIOp>(loc_, resultIdx, step);
-
-                    builder_.create<mlir::scf::YieldOp>(loc_);
-                    builder_ = outerBuilder;
-                    loc_ = outerLoc;
+                    // result[resultIdx] = current element from domain
+                    ifBuilder.create<mlir::memref::StoreOp>(ifLoc, iVal, result, resultIdx);
+                    // advance write index
+                    resultIdx = ifBuilder.create<mlir::arith::AddIOp>(ifLoc, resultIdx, step);
+                    ifBuilder.create<mlir::scf::YieldOp>(ifLoc);
                 }
             );
+
+            // terminate the loop body block
+            builder_.create<mlir::scf::YieldOp>(loc_);
+            builder_ = outerBuilder;
         }
     );
-
+    // Restore outer symbol binding for loop variable
+    if (hadPrevSym) symbolTable_[genName] = prevSymVal; else symbolTable_.erase(genName);
 
     pushValue(result);
 }
