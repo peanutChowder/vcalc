@@ -1,0 +1,8 @@
+//CHECK_FILE:testNestedIf.out
+int v = 3;
+if (v < 5)
+    print(1);
+    if (v > 1)
+        print(2);
+    fi;
+fi;
