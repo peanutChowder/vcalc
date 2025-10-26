@@ -311,7 +311,7 @@ void MLIRGen::visit(FilterNode* node){
     auto size = builder_.create<mlir::memref::DimOp>(loc_, domainVec, 0);
 
     // Allocate result vector (max possible size is domain size)
-    auto memrefType = mlir::MemRefType::get({-1}, builder_.getI32Type());
+    auto memrefType = mlir::MemRefType::get({mlir::ShapedType::kDynamic}, builder_.getI32Type());
     auto result = builder_.create<mlir::memref::AllocOp>(loc_, memrefType, mlir::ValueRange{size});
 
     // Index for writing into result vector
@@ -322,53 +322,57 @@ void MLIRGen::visit(FilterNode* node){
     // Loop over domain vector
     auto zero = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
     auto step = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 1);
-    auto forOp = builder_.create<mlir::scf::ForOp>(loc_, zero, size, step, mlir::ValueRange{zeroIdx});
 
-    builder_.setInsertionPointToStart(forOp.getBody());
-    auto iv = forOp.getInductionVar();
-    auto outIdx = forOp.getRegionIterArgs()[0];
+    // Conditionally incremented index if predicate evaluates to true
+    mlir::Value resultIdx = zero;
 
-    // Load domain value for this index
-    auto domainVal = builder_.create<mlir::memref::LoadOp>(loc_, domainVec, iv);
+    // Save any outer binding for the generator variable (SSA symbol table)
+    const std::string genName = node->id->name;
+    auto prevSym = symbolTable_.find(genName);
+    bool hadPrevSym = prevSym != symbolTable_.end();
+    mlir::Value prevSymVal;
+    if (hadPrevSym) prevSymVal = prevSym->second;
 
-    // Place domain value on stack for predicate
-    pushValue(domainVal);
+    // for iv in [0, size):
+    builder_.create<mlir::scf::ForOp>(
+        loc_, zero, size, step, mlir::ValueRange{},
+        [&](mlir::OpBuilder &forBuilder, mlir::Location forLoc, mlir::Value iv, mlir::ValueRange) {
+            mlir::OpBuilder outerBuilder = builder_;
+            builder_ = forBuilder;
+            mlir::Location outerLoc = loc_;
+            loc_ = forLoc;
 
-    // Evaluate predicate
-    node->predicate->accept(*this);
-    auto predResult = popValue();
+            // i = domainVec[iv], set this before eval predicate
+            auto iVal = builder_.create<mlir::memref::LoadOp>(loc_, domainVec, iv);
+            varMem_[node->id->name] = iVal;
 
-    // Convert predicate to i1
-    mlir::Value cond;
-    if (auto it = predResult.getType().dyn_cast<mlir::IntegerType>()) {
-        if (it.getWidth() == 1) {
-            cond = predResult;
-        } else {
-            auto zeroI = builder_.create<mlir::arith::ConstantIntOp>(loc_, 0, it);
-            cond = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predResult, zeroI);
+            // Evaluate predicate
+            node->predicate->accept(*this);
+            mlir::Value predicateResult = popValue();
+            auto isNotZero = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predicateResult, zero);
+
+            builder_.create<mlir::scf::IfOp>(
+                loc_,
+                isNotZero,
+                [&](mlir::OpBuilder &ifBuilder, mlir::Location ifLoc) {
+                    mlir::OpBuilder outerBuilder = builder_;
+                    builder_ = ifBuilder;
+                    mlir::Location outerLoc = loc_;
+                    loc_ = ifLoc;
+
+                    // result[resultIdx] = elem
+                    builder_.create<mlir::memref::StoreOp>(loc_, iVal, result, resultIdx);
+
+                    resultIdx = builder_.create<mlir::arith::AddIOp>(loc_, resultIdx, step);
+
+                    builder_.create<mlir::scf::YieldOp>(loc_);
+                    builder_ = outerBuilder;
+                    loc_ = outerLoc;
+                }
+            );
         }
-    } else if (predResult.getType().isa<mlir::IndexType>()) {
-        auto zeroIdx = builder_.create<mlir::arith::ConstantIndexOp>(loc_, 0);
-        cond = builder_.create<mlir::arith::CmpIOp>(loc_, mlir::arith::CmpIPredicate::ne, predResult, zeroIdx);
-    } else {
-        throw std::runtime_error("MLIRGen error: unsupported predicate type");
-    }
+    );
 
-    // scf.if must produce the carried index; create if with result type index
-    auto ifOp = builder_.create<mlir::scf::IfOp>(loc_, mlir::TypeRange{outIdx.getType()}, cond, /*withElseRegion=*/true);
-    // If predicate is true, store domain value in result vector
-    builder_.setInsertionPointToStart(&ifOp.getThenRegion().front());
-    builder_.create<mlir::memref::StoreOp>(loc_, domainVal, result, outIdx);
-    auto incrOutIdx = builder_.create<mlir::arith::AddIOp>(loc_, outIdx, oneIdx);
-    builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{incrOutIdx});
-
-    // Else outIdx not incremented
-    builder_.setInsertionPointToStart(&ifOp.getElseRegion().front());
-    builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{outIdx});
-
-    // make outIdx pass to next iteration
-    builder_.setInsertionPointAfter(ifOp);
-    builder_.create<mlir::scf::YieldOp>(loc_, mlir::ValueRange{ifOp.getResult(0)});
 
     pushValue(result);
 }
